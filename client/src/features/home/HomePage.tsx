@@ -183,7 +183,6 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply[]>>({})
   const [pendingTransmissions, setPendingTransmissions] = useState<Record<string, Carrier>>({})
   const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
-  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const canSend =
     text.trim().length > 0 && (carrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0)
@@ -241,21 +240,17 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           author: user.username,
           handle: user.username,
           text: replyText.trim(),
-          age: 'en route',
+          age: '',
           method: actionCarrier,
         },
       ],
     }))
     setReplyText('')
     setReplyFor(null)
-    setActionNotice('Réponse en route.')
   }
 
   function openTransmit(note: Note) {
-    if (pendingTransmissions[note.id]) {
-      setActionNotice('Transmission en route vers le hub. La suivante sera disponible à son arrivée.')
-      return
-    }
+    if (pendingTransmissions[note.id]) return
     setTransmitFor(note.id)
     setReplyFor(null)
   }
@@ -272,27 +267,30 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
       [note.id]: (counts[note.id] ?? 0) + 1,
     }))
     setTransmitFor(null)
-    setActionNotice('Transmission en route vers le hub.')
   }
 
   const panel =
     'rounded-2xl bg-white shadow-[0_4px_14px_rgba(42,157,244,.08)] dark:bg-night-1 dark:shadow-none dark:border dark:border-night-line'
   const mutedText = 'text-[#5b7a94] dark:text-zinc-500'
   const actionCarrierToggle = (
-    <div className="flex w-fit items-center gap-1 rounded-lg bg-slate-100 p-1 dark:bg-night-2">
+    <div className="flex w-fit items-center gap-0.5 rounded-lg bg-slate-100 p-1 dark:bg-night-2">
       <button
         type="button"
         onClick={() => setActionCarrier('BIRD')}
-        className={'flex min-h-[34px] items-center gap-1.5 rounded-md px-2.5 text-[12px] font-bold ' + (actionCarrier === 'BIRD' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
+        title={`Pigeon (${pigeonsFree} disponibles)`}
+        aria-label={`Pigeon, ${pigeonsFree} disponibles`}
+        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-[12px] font-bold ' + (actionCarrier === 'BIRD' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
       >
-        <IconBird /> Pigeon · {pigeonsFree}
+        <IconBird /> {pigeonsFree}
       </button>
       <button
         type="button"
         onClick={() => setActionCarrier('POST')}
-        className={'flex min-h-[34px] items-center gap-1.5 rounded-md px-2.5 text-[12px] font-bold ' + (actionCarrier === 'POST' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
+        title={`Lettre (${stamps} disponibles)`}
+        aria-label={`Lettre, ${stamps} disponibles`}
+        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-[12px] font-bold ' + (actionCarrier === 'POST' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
       >
-        <IconMail /> Lettre · {stamps}
+        <IconMail /> {stamps}
       </button>
     </div>
   )
@@ -331,12 +329,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 <b className="block text-[15px]">{selectedPost.author}</b>
                 <small className={mutedText}>@{selectedPost.handle}</small>
               </div>
+              <div className={'ml-auto flex items-center gap-1.5 text-[12px] whitespace-nowrap ' + mutedText}>
+                {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
+                <span>{formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}</span>
+              </div>
             </div>
             <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
-            <small className={'flex items-center gap-1.5 ' + mutedText}>
-              {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
-              {formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}
-            </small>
             <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
               <button onClick={() => openReply(selectedPost)} className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}>
                 <IconReply /> {replyCount} réponses
@@ -345,7 +343,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 <IconRepeat /> {selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)} transmissions
               </button>
               {pendingTransmissions[selectedPost.id] && (
-                <small className={'ml-auto text-[11px] font-semibold ' + mutedText}>vers hub</small>
+                <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
               )}
             </div>
           </article>
@@ -369,31 +367,30 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   onChange={(event) => setReplyText(event.target.value)}
                   placeholder={`Répondre à ${selectedPost.author}…`}
                   maxLength={280}
-                  className="min-h-[88px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                  className="min-h-[72px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
                 />
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
-                  <button type="button" onClick={() => setReplyFor(null)} className={'px-3 py-2 text-[13px] font-bold ' + mutedText}>
-                    Annuler
-                  </button>
-                  <button type="submit" disabled={!replyText.trim() || !carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">
-                    Répondre
-                  </button>
+                    <button type="button" onClick={() => setReplyFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                    <button type="submit" disabled={!replyText.trim() || !carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Répondre</button>
                   </div>
                 </div>
               </form>
             )}
 
             {transmitFor === selectedPost.id && (
-              <div className={panel + ' mt-4 flex flex-wrap items-center justify-between gap-3 border border-sky-100 p-4 dark:border-night-line'}>
+              <div className={panel + ' mt-4 border border-sky-100 p-4 dark:border-night-line'}>
                 <div>
                   <b className="block text-sm">Transmettre à vos abonnés</b>
                   <small className={mutedText}>Votre envoi suivra son propre trajet.</small>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
-                  <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                  <div className="flex gap-2">
+                    <button onClick={() => setTransmitFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                    <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                  </div>
                 </div>
               </div>
             )}
@@ -403,7 +400,11 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 <article key={reply.id} className={'border-l-2 pl-3 ' + ('method' in reply ? 'border-dashed border-accent opacity-70' : 'border-sky-200 dark:border-night-line')}>
                   <div className="flex flex-wrap items-baseline gap-1.5 text-sm">
                     <b>{reply.author}</b>
-                    <span className={mutedText}>@{reply.handle} · {reply.age}{'method' in reply ? ` · ${reply.method === 'BIRD' ? 'pigeon' : 'lettre'}` : ''}</span>
+                    {'method' in reply ? (
+                      <span className={'flex items-center gap-1 ' + mutedText} title="Livraison en cours">@{reply.handle} {reply.method === 'BIRD' ? <IconBird /> : <IconMail />}</span>
+                    ) : (
+                      <span className={mutedText}>@{reply.handle} · {reply.age}</span>
+                    )}
                   </div>
                   <p className="mt-1 text-[14px] leading-relaxed">{reply.text}</p>
                 </article>
@@ -411,12 +412,6 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
             </div>
           </section>
 
-          {actionNotice && (
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-[#183852] px-4 py-3 text-sm font-bold text-white">
-              {actionNotice}
-              <button onClick={() => setActionNotice(null)} className="ml-3 text-white/70 hover:text-white" aria-label="Fermer">×</button>
-            </div>
-          )}
         </main>
       </div>
     )
@@ -659,7 +654,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                     <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions
                   </button>
                   {pendingTransmissions[p.id] && (
-                    <small className={'ml-auto text-[11px] font-semibold ' + mutedText}>vers hub</small>
+                    <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
                   )}
                 </div>
                 {replyFor === p.id && (
@@ -677,22 +672,22 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                       onChange={(event) => setReplyText(event.target.value)}
                       placeholder={`Répondre à ${p.author}…`}
                       maxLength={280}
-                      className="min-h-[72px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                      className="min-h-[64px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
                     />
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
                       <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={() => setReplyFor(null)}
-                        className={'px-3 py-2 text-[13px] font-bold ' + mutedText}
+                        className={'px-2 py-2 text-[13px] font-bold ' + mutedText}
                       >
                         Annuler
                       </button>
                       <button
                         type="submit"
                         disabled={!replyText.trim() || !carrierAvailable(actionCarrier)}
-                        className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40"
+                        className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40"
                       >
                         Répondre
                       </button>
@@ -702,16 +697,19 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 )}
                 {transmitFor === p.id && (
                   <div
-                    className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50 p-3 dark:border-night-line dark:bg-night-2"
+                    className="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3 dark:border-night-line dark:bg-night-2"
                     onClick={(event) => event.stopPropagation()}
                   >
                     <div>
                       <b className="block text-[13px]">Transmettre à vos abonnés</b>
                       <small className={mutedText}>Chaque abonné recevra la note après son trajet.</small>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
-                      <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                      <div className="flex gap-2">
+                        <button onClick={() => setTransmitFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                        <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -722,19 +720,6 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           <p className={'py-8 text-center text-[13px] ' + mutedText}>
             Feed de démonstration · sera branché sur l'API
           </p>
-
-          {actionNotice && (
-            <div className="fixed right-4 bottom-24 z-50 rounded-xl bg-[#183852] px-4 py-3 text-sm font-bold text-white shadow-xl lg:right-8 lg:bottom-8">
-              {actionNotice}
-              <button
-                onClick={() => setActionNotice(null)}
-                className="ml-3 text-white/70 hover:text-white"
-                aria-label="Fermer"
-              >
-                ×
-              </button>
-            </div>
-          )}
 
         </main>
 
