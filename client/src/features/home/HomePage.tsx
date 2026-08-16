@@ -603,7 +603,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 tabIndex={0}
                 className={
                   panel +
-                  ' mt-4 cursor-pointer p-4.5 first:mt-0 transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus:ring-2 focus:ring-accent lg:first:mt-4 dark:hover:bg-night-2'
+                  ' mt-4 cursor-pointer p-4.5 first:mt-0 transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:first:mt-4 dark:hover:bg-night-2'
                 }
               >
                 <div className="flex items-center gap-2.5">
