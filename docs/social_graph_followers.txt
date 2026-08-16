@@ -62,6 +62,11 @@ Chaque action consomme une unité de la méthode choisie. Une réponse de l'aute
 est visible dans son propre fil sous forme pointillée tant que sa livraison est
 en cours ; elle n'est pas encore une réponse arrivée pour les autres lecteurs.
 
+Plusieurs réponses à une même note peuvent être en route simultanément. En
+revanche, une seule transmission de cette note peut être en route par auteur :
+une nouvelle transmission est possible dès que la première atteint son hub de
+relais, sans attendre les livraisons individuelles aux abonnés.
+
 ================================================================================
 4. DONNÉES MVP
 ================================================================================

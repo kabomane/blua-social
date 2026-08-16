@@ -181,6 +181,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   const [replyText, setReplyText] = useState('')
   const [actionCarrier, setActionCarrier] = useState<Carrier>('BIRD')
   const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply[]>>({})
+  const [pendingTransmissions, setPendingTransmissions] = useState<Record<string, Carrier>>({})
   const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
   const [actionNotice, setActionNotice] = useState<string | null>(null)
 
@@ -251,19 +252,27 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   }
 
   function openTransmit(note: Note) {
+    if (pendingTransmissions[note.id]) {
+      setActionNotice('Transmission en route vers le hub. La suivante sera disponible à son arrivée.')
+      return
+    }
     setTransmitFor(note.id)
     setReplyFor(null)
   }
 
   function submitTransmit(note: Note) {
-    if (!carrierAvailable(actionCarrier)) return
+    if (!carrierAvailable(actionCarrier) || pendingTransmissions[note.id]) return
     useCarrier(actionCarrier)
+    setPendingTransmissions((transmissions) => ({
+      ...transmissions,
+      [note.id]: actionCarrier,
+    }))
     setTransmissionCounts((counts) => ({
       ...counts,
       [note.id]: (counts[note.id] ?? 0) + 1,
     }))
     setTransmitFor(null)
-    setActionNotice('Note transmise à vos abonnés.')
+    setActionNotice('Transmission en route vers le hub.')
   }
 
   const panel =
@@ -310,7 +319,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
         </header>
 
         <main className="mx-auto max-w-[720px] px-4 py-5 pb-12">
-          <article className={panel + ' overflow-hidden p-5'}>
+          <article className={panel + ' p-4.5'}>
             <div className="flex items-start gap-3">
               <div
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
@@ -328,25 +337,22 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
               {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
               {formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}
             </small>
-            <div className="mt-5 flex items-center gap-6 border-t border-sky-100 pt-3 dark:border-night-line">
-              <button onClick={() => openReply(selectedPost)} className={'flex items-center gap-1.5 text-[13px] font-bold hover:text-[#1272b8] ' + mutedText}>
+            <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
+              <button onClick={() => openReply(selectedPost)} className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}>
                 <IconReply /> {replyCount} réponses
               </button>
-              <button onClick={() => openTransmit(selectedPost)} className={'flex items-center gap-1.5 text-[13px] font-bold hover:text-[#1272b8] ' + mutedText}>
+              <button onClick={() => openTransmit(selectedPost)} className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}>
                 <IconRepeat /> {selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)} transmissions
               </button>
+              {pendingTransmissions[selectedPost.id] && (
+                <small className={'ml-auto text-[11px] font-semibold ' + mutedText}>vers hub</small>
+              )}
             </div>
           </article>
 
           <section className="mt-6">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
               <b className="text-[15px]">Conversation · {replyCount} réponses</b>
-              <button
-                onClick={() => openReply(selectedPost)}
-                className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white"
-              >
-                Répondre
-              </button>
             </div>
 
             {replyFor === selectedPost.id && (
@@ -387,7 +393,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
                   {actionCarrierToggle}
-                  <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                  <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
                 </div>
               </div>
             )}
@@ -626,7 +632,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   </div>
                 </div>
                 <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
-                <div className="mt-5 flex items-center gap-5 border-t border-sky-100 pt-3 dark:border-night-line">
+                <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
                   <button
                     onClick={(event) => {
                       event.stopPropagation()
@@ -652,6 +658,9 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   >
                     <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions
                   </button>
+                  {pendingTransmissions[p.id] && (
+                    <small className={'ml-auto text-[11px] font-semibold ' + mutedText}>vers hub</small>
+                  )}
                 </div>
                 {replyFor === p.id && (
                   <form
@@ -702,7 +711,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       {actionCarrierToggle}
-                      <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                      <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
                     </div>
                   </div>
                 )}
