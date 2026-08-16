@@ -189,7 +189,6 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   }
 
   function openReply(note: Note) {
-    setSelectedPost(null)
     setReplyFor(note.id)
     setReplyText('')
   }
@@ -213,6 +212,109 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   const panel =
     'rounded-2xl bg-white shadow-[0_4px_14px_rgba(42,157,244,.08)] dark:bg-night-1 dark:shadow-none dark:border dark:border-night-line'
   const mutedText = 'text-[#5b7a94] dark:text-zinc-500'
+
+  if (selectedPost) {
+    const replyCount = selectedPost.replies + (replyCounts[selectedPost.id] ?? 0)
+
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
+        <header className="sticky top-0 z-30 border-b border-white/50 bg-white/85 backdrop-blur dark:border-night-line dark:bg-night-0/90">
+          <div className="mx-auto flex max-w-[720px] items-center gap-3 px-4 py-3">
+            <button
+              onClick={() => {
+                setSelectedPost(null)
+                setReplyFor(null)
+              }}
+              className={'rounded-full px-3 py-2 text-sm font-bold hover:bg-sky-50 dark:hover:bg-night-2 ' + mutedText}
+            >
+              ← Home
+            </button>
+            <b className="text-[17px]">Note</b>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-[720px] px-4 py-5 pb-12">
+          <article className={panel + ' p-5'}>
+            <div className="flex items-start gap-3">
+              <div
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                style={{ background: selectedPost.color }}
+              >
+                {selectedPost.author.charAt(0)}
+              </div>
+              <div>
+                <b className="block text-[15px]">{selectedPost.author}</b>
+                <small className={mutedText}>@{selectedPost.handle}</small>
+              </div>
+            </div>
+            <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
+            <small className={'flex items-center gap-1.5 ' + mutedText}>
+              {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
+              {formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}
+            </small>
+          </article>
+
+          <section className={panel + ' mt-4 p-5'}>
+            <div className="flex items-center justify-between gap-3">
+              <b className="text-[15px]">{replyCount} réponses</b>
+              <button
+                onClick={() => openReply(selectedPost)}
+                className="rounded-full bg-accent px-4 py-2 text-[13px] font-extrabold text-white"
+              >
+                Répondre
+              </button>
+            </div>
+
+            {replyFor === selectedPost.id && (
+              <form
+                className="mt-4 rounded-xl bg-sky-50 p-3 dark:bg-night-2"
+                onSubmit={(event) => {
+                  event.preventDefault()
+                  submitReply(selectedPost)
+                }}
+              >
+                <textarea
+                  autoFocus
+                  value={replyText}
+                  onChange={(event) => setReplyText(event.target.value)}
+                  placeholder={`Répondre à ${selectedPost.author}…`}
+                  maxLength={280}
+                  className="min-h-[88px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                />
+                <div className="mt-2 flex justify-end gap-2">
+                  <button type="button" onClick={() => setReplyFor(null)} className={'px-3 py-2 text-[13px] font-bold ' + mutedText}>
+                    Annuler
+                  </button>
+                  <button type="submit" disabled={!replyText.trim()} className="rounded-full bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">
+                    Répondre
+                  </button>
+                </div>
+              </form>
+            )}
+
+            <div className="mt-5 space-y-4">
+              {DEMO_REPLIES.map((reply) => (
+                <article key={reply.handle} className="border-l-2 border-sky-100 pl-3 dark:border-night-line">
+                  <div className="flex flex-wrap items-baseline gap-1.5 text-sm">
+                    <b>{reply.author}</b>
+                    <span className={mutedText}>@{reply.handle} · {reply.age}</span>
+                  </div>
+                  <p className="mt-1 text-[14px] leading-relaxed">{reply.text}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          {actionNotice && (
+            <div className="mt-4 flex items-center justify-between rounded-xl bg-[#183852] px-4 py-3 text-sm font-bold text-white">
+              {actionNotice}
+              <button onClick={() => setActionNotice(null)} className="ml-3 text-white/70 hover:text-white" aria-label="Fermer">×</button>
+            </div>
+          )}
+        </main>
+      </div>
+    )
+  }
 
   // ------- morceaux partagés du composer (desktop inline / mobile plein écran)
   const carrierToggle = (
@@ -510,67 +612,6 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
             </div>
           )}
 
-          {selectedPost && (
-            <div
-              className="fixed inset-0 z-50 flex items-end bg-black/45 p-0 sm:items-center sm:justify-center sm:p-6"
-              onClick={() => setSelectedPost(null)}
-            >
-              <section
-                className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-[620px] sm:rounded-3xl dark:bg-night-1"
-                onClick={(event) => event.stopPropagation()}
-                aria-label="Détail de la note"
-              >
-                <div className="flex items-start gap-3">
-                  <div
-                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
-                    style={{ background: selectedPost.color }}
-                  >
-                    {selectedPost.author.charAt(0)}
-                  </div>
-                  <div>
-                    <b className="block text-[15px]">{selectedPost.author}</b>
-                    <small className={mutedText}>@{selectedPost.handle}</small>
-                  </div>
-                  <button
-                    onClick={() => setSelectedPost(null)}
-                    className={'ml-auto rounded-full px-3 py-2 text-sm font-bold hover:bg-slate-100 dark:hover:bg-night-2 ' + mutedText}
-                  >
-                    Fermer
-                  </button>
-                </div>
-                <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
-                <small className={'flex items-center gap-1.5 ' + mutedText}>
-                  {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
-                  {formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}
-                </small>
-
-                <div className="mt-5 border-t border-sky-100 pt-4 dark:border-night-line">
-                  <div className="flex items-center justify-between">
-                    <b className="text-sm">
-                      {selectedPost.replies + (replyCounts[selectedPost.id] ?? 0)} réponses
-                    </b>
-                    <button
-                      onClick={() => openReply(selectedPost)}
-                      className="rounded-full bg-accent px-4 py-2 text-[13px] font-extrabold text-white"
-                    >
-                      Répondre
-                    </button>
-                  </div>
-                  <div className="mt-3 space-y-3">
-                    {DEMO_REPLIES.map((reply) => (
-                      <div key={reply.handle} className="border-l-2 border-sky-100 pl-3 dark:border-night-line">
-                        <div className="flex items-baseline gap-1.5 text-sm">
-                          <b>{reply.author}</b>
-                          <span className={mutedText}>@{reply.handle} · {reply.age}</span>
-                        </div>
-                        <p className="mt-1 text-[14px] leading-relaxed">{reply.text}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
         </main>
 
         {/* ================= COLONNE DROITE (fixe) ================= */}
