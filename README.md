@@ -25,7 +25,7 @@ entrant devient visible lorsque `delivered_at <= now`.
 
 Trois espaces structurent le réseau :
 
-- **Home** : publications destinées aux amis. L'auteur envoie une seule fois
+- **Home** : publications des comptes suivis. L'auteur envoie une seule fois
   vers son hub géographiquement le plus proche. Le hub distribue ensuite une
   livraison indépendante à chaque ami ; chacun reçoit le post à son propre
   moment. Le pigeon ou timbre de l'auteur est libéré à l'arrivée au hub.
@@ -33,9 +33,11 @@ Trois espaces structurent le réseau :
   destinées à la découverte et aux échanges autour d'un territoire.
 - **Cui-to-cui** : conversations privées directes entre deux personnes.
 
-Les amitiés sont réciproques. Il n'y a ni likes, ni followers, ni compteurs de
-popularité : répondre et transmettre sont des actions de communication, avec
-un coût de capacité. Les coordonnées fournies par le navigateur sont conservées
+Les abonnements sont unilatéraux. Deux abonnements réciproques créent une
+amitié, seule relation qui ouvre le cui-to-cui. Il n'y a ni likes ni compteurs
+publics de popularité : répondre et transmettre sont des actions de
+communication, avec un coût de capacité. Une transmission crée une nouvelle
+publication livrée aux abonnés du transmetteur. Les coordonnées fournies par le navigateur sont conservées
 pour calculer les trajets ; l'interface n'expose qu'une ville, jamais une
 position exacte.
 
@@ -124,5 +126,5 @@ docs/                    conception produit + doc IA
 4. Un pigeon = une action de communication ; disponibilité dérivée de
    `busy_until <= now`. Pour Home, il est occupé uniquement jusqu'au hub de
    relais ; jamais jusqu'au dernier ami livré.
-5. Pas de likes, pas de followers — amitiés réciproques et branches
-   géographiques immuables.
+5. Pas de likes ni compteurs publics de followers — abonnements unilatéraux,
+   amitié dérivée de leur réciprocité, branches géographiques immuables.

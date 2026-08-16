@@ -45,7 +45,7 @@
   hub. `pigeon_actions.busy_until` = arrivée au hub ; chaque delivery stocke
   `origin_hub_id` et `dispatched_at`.
 - Jamais d'appel réseau/calcul long dans une transaction SQLite.
-- Home en fan-out on read (amis + deliveries arrivées + échos), LIMIT 20.
+- Home en fan-out on read (abonnements ACCEPTED + deliveries arrivées + échos), LIMIT 20.
 - Friendships normalisées : `user_a_id = min(id1,id2)`, `user_b_id = max`.
 - lat/lon d'une branche : immuables après création.
 

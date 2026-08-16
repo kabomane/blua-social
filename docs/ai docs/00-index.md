@@ -11,7 +11,10 @@ C'est ma mémoire de projet : décisions, synthèses, état d'avancement.
 
 ## Règles que je m'impose
 
-1. Les fichiers de conception `docs/*.txt` sont la **source de vérité** — en cas de doute,
+1. Les fichiers de conception `docs/*.txt` sont la **source de vérité** — les
+   règles les plus récentes (`home_posts_via_hub.txt`,
+   `social_graph_followers.txt`) remplacent les règles contradictoires des
+   documents plus anciens — en cas de doute,
    les relire avant de coder ; ne jamais les contredire silencieusement.
 2. Tenir `03-etat-du-projet.md` à jour à chaque session de travail.
 3. Toute décision technique non couverte par les docs est consignée dans

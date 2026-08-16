@@ -24,6 +24,29 @@ interface Props {
   onLogout: () => void
 }
 
+interface Note {
+  id: string
+  author: string
+  handle: string
+  color: string
+  method: 'BIRD' | 'POST'
+  distance: string
+  arrivedAt: number
+  text: string
+  replies: number
+  transmissions: number
+}
+
+interface BranchEcho {
+  id: string
+  echo: true
+  branch: string
+  distance: string
+  activity: string
+  friends: string
+  text: string
+}
+
 /**
  * Libellé d'arrivée homogène, sans préfixe « il y a ».
  * < 1 h : min · aujourd'hui : h · nuit : cette nuit · hier : hier ·
@@ -57,7 +80,7 @@ function formatArrivalAge(arrivedAt: number, now = new Date()): string {
 // quand le backend feed sera branché.
 // ---------------------------------------------------------------------------
 const DEMO_NOW = Date.now()
-const DEMO_FEED = [
+const DEMO_FEED: (Note | BranchEcho)[] = [
   {
     id: 'm1',
     author: 'Alice',
@@ -66,6 +89,8 @@ const DEMO_FEED = [
     method: 'BIRD' as const,
     distance: '391 km',
     arrivedAt: DEMO_NOW - 20 * 60_000,
+    replies: 12,
+    transmissions: 4,
     text: "Quelqu'un a vu le film hier soir au ciné-club ? Je n'arrête pas d'y penser…",
   },
   {
@@ -85,6 +110,8 @@ const DEMO_FEED = [
     method: 'POST' as const,
     distance: '264 km',
     arrivedAt: DEMO_NOW - 2 * 3_600_000,
+    replies: 3,
+    transmissions: 1,
     text: "Je viens de rentrer du Japon. J'ai laissé une branche là-bas, près du Fuji — envoyez-y un message un jour.",
   },
   {
@@ -95,8 +122,15 @@ const DEMO_FEED = [
     method: 'BIRD' as const,
     distance: '9 726 km',
     arrivedAt: DEMO_NOW - 29 * 86_400_000,
+    replies: 28,
+    transmissions: 8,
     text: "Ce message a quitté Tokyo il y a un mois. S'il est arrivé jusqu'à toi, raconte-moi Paris.",
   },
+]
+
+const DEMO_REPLIES = [
+  { author: 'Noah', handle: 'noah', text: 'Oui, la discussion après la séance était incroyable.', age: '14 min' },
+  { author: 'Lina', handle: 'lina', text: 'Je cherche encore où le revoir. Tu me diras si tu trouves.', age: '8 min' },
 ]
 
 const DEMO_BRANCHES = [
@@ -126,6 +160,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   const [stamps, setStamps] = useState(3)
   const [inFlight, setInFlight] = useState(3)
   const [composeOpen, setComposeOpen] = useState(false)
+  const [selectedPost, setSelectedPost] = useState<Note | null>(null)
+  const [replyFor, setReplyFor] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [replyCounts, setReplyCounts] = useState<Record<string, number>>({})
+  const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
+  const [actionNotice, setActionNotice] = useState<string | null>(null)
 
   const canSend =
     text.trim().length > 0 && (carrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0)
@@ -146,6 +186,28 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   async function logout() {
     await clearUser()
     onLogout()
+  }
+
+  function openReply(note: Note) {
+    setSelectedPost(null)
+    setReplyFor(note.id)
+    setReplyText('')
+  }
+
+  function submitReply(note: Note) {
+    if (!replyText.trim()) return
+    setReplyCounts((counts) => ({ ...counts, [note.id]: (counts[note.id] ?? 0) + 1 }))
+    setReplyText('')
+    setReplyFor(null)
+    setActionNotice('Réponse prête à être envoyée.')
+  }
+
+  function transmit(note: Note) {
+    setTransmissionCounts((counts) => ({
+      ...counts,
+      [note.id]: (counts[note.id] ?? 0) + 1,
+    }))
+    setActionNotice('Note transmise à vos abonnés.')
   }
 
   const panel =
@@ -271,13 +333,13 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
         {/* ================= FEED ================= */}
         <main className="lg:py-8">
           {/* compose inline — desktop uniquement.
-              La Home publie vers les amis : pas de choix de destination ici. */}
+              La Home publie vers les abonnés : pas de choix de destination ici. */}
           <div className={panel + ' hidden p-4.5 lg:block'}>
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
               maxLength={280}
-              placeholder="Partager quelque chose avec vos amis…"
+              placeholder="Partager quelque chose avec vos abonnés…"
               className="min-h-[64px] w-full resize-none bg-transparent text-[16.5px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
             />
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
@@ -323,7 +385,18 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 </div>
               </article>
             ) : (
-              <article key={p.id} className={panel + ' mt-4 p-4.5 first:mt-0 lg:first:mt-4'}>
+              <article
+                key={p.id}
+                onClick={() => setSelectedPost(p)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') setSelectedPost(p)
+                }}
+                tabIndex={0}
+                className={
+                  panel +
+                  ' mt-4 cursor-pointer p-4.5 first:mt-0 transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus:ring-2 focus:ring-accent lg:first:mt-4 dark:hover:bg-night-2'
+                }
+              >
                 <div className="flex items-center gap-2.5">
                   <div
                     className="flex h-10 w-10 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
@@ -351,24 +424,71 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   </div>
                 </div>
                 <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
-                <div className="flex gap-2">
+                <div className="mt-5 flex items-center gap-5 border-t border-sky-100 pt-3 dark:border-night-line">
                   <button
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      openReply(p)
+                    }}
+                    title="Répondre à cette note"
+                    aria-label={`Répondre — ${p.replies + (replyCounts[p.id] ?? 0)} réponses`}
                     className={
-                      'flex min-h-[40px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
+                      'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
                       mutedText
                     }
                   >
-                    <IconReply /> Répondre
+                    <IconReply /> {p.replies + (replyCounts[p.id] ?? 0)} réponses
                   </button>
                   <button
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      transmit(p)
+                    }}
+                    title="Transmettre cette note à vos abonnés"
+                    aria-label={`Transmettre — ${p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions`}
                     className={
-                      'flex min-h-[40px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
+                      'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
                       mutedText
                     }
                   >
-                    <IconRepeat /> Transmettre
+                    <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions
                   </button>
                 </div>
+                {replyFor === p.id && (
+                  <form
+                    className="mt-3 rounded-xl bg-sky-50 p-3 dark:bg-night-2"
+                    onClick={(event) => event.stopPropagation()}
+                    onSubmit={(event) => {
+                      event.preventDefault()
+                      submitReply(p)
+                    }}
+                  >
+                    <textarea
+                      autoFocus
+                      value={replyText}
+                      onChange={(event) => setReplyText(event.target.value)}
+                      placeholder={`Répondre à ${p.author}…`}
+                      maxLength={280}
+                      className="min-h-[72px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                    />
+                    <div className="mt-2 flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReplyFor(null)}
+                        className={'px-3 py-2 text-[13px] font-bold ' + mutedText}
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!replyText.trim()}
+                        className="rounded-full bg-accent px-4 py-2 text-[13px] font-extrabold text-white disabled:opacity-40"
+                      >
+                        Répondre
+                      </button>
+                    </div>
+                  </form>
+                )}
               </article>
             ),
           )}
@@ -376,6 +496,81 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           <p className={'py-8 text-center text-[13px] ' + mutedText}>
             Feed de démonstration · sera branché sur l'API
           </p>
+
+          {actionNotice && (
+            <div className="fixed right-4 bottom-24 z-50 rounded-xl bg-[#183852] px-4 py-3 text-sm font-bold text-white shadow-xl lg:right-8 lg:bottom-8">
+              {actionNotice}
+              <button
+                onClick={() => setActionNotice(null)}
+                className="ml-3 text-white/70 hover:text-white"
+                aria-label="Fermer"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
+          {selectedPost && (
+            <div
+              className="fixed inset-0 z-50 flex items-end bg-black/45 p-0 sm:items-center sm:justify-center sm:p-6"
+              onClick={() => setSelectedPost(null)}
+            >
+              <section
+                className="max-h-[88vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-[620px] sm:rounded-3xl dark:bg-night-1"
+                onClick={(event) => event.stopPropagation()}
+                aria-label="Détail de la note"
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                    style={{ background: selectedPost.color }}
+                  >
+                    {selectedPost.author.charAt(0)}
+                  </div>
+                  <div>
+                    <b className="block text-[15px]">{selectedPost.author}</b>
+                    <small className={mutedText}>@{selectedPost.handle}</small>
+                  </div>
+                  <button
+                    onClick={() => setSelectedPost(null)}
+                    className={'ml-auto rounded-full px-3 py-2 text-sm font-bold hover:bg-slate-100 dark:hover:bg-night-2 ' + mutedText}
+                  >
+                    Fermer
+                  </button>
+                </div>
+                <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
+                <small className={'flex items-center gap-1.5 ' + mutedText}>
+                  {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
+                  {formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}
+                </small>
+
+                <div className="mt-5 border-t border-sky-100 pt-4 dark:border-night-line">
+                  <div className="flex items-center justify-between">
+                    <b className="text-sm">
+                      {selectedPost.replies + (replyCounts[selectedPost.id] ?? 0)} réponses
+                    </b>
+                    <button
+                      onClick={() => openReply(selectedPost)}
+                      className="rounded-full bg-accent px-4 py-2 text-[13px] font-extrabold text-white"
+                    >
+                      Répondre
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {DEMO_REPLIES.map((reply) => (
+                      <div key={reply.handle} className="border-l-2 border-sky-100 pl-3 dark:border-night-line">
+                        <div className="flex items-baseline gap-1.5 text-sm">
+                          <b>{reply.author}</b>
+                          <span className={mutedText}>@{reply.handle} · {reply.age}</span>
+                        </div>
+                        <p className="mt-1 text-[14px] leading-relaxed">{reply.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            </div>
+          )}
         </main>
 
         {/* ================= COLONNE DROITE (fixe) ================= */}
@@ -457,7 +652,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           </header>
 
           <p className={'px-4 pt-3 text-[12.5px] font-semibold ' + mutedText}>
-            Partagé avec vos amis
+            Partagé avec vos abonnés
           </p>
 
           <textarea
@@ -465,7 +660,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
             onChange={(e) => setText(e.target.value)}
             maxLength={280}
             autoFocus
-            placeholder="Partager quelque chose avec vos amis…"
+            placeholder="Partager quelque chose avec vos abonnés…"
             className="flex-1 resize-none bg-transparent px-4 py-3 text-[17px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
           />
 

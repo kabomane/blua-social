@@ -23,9 +23,9 @@ CREATE TABLE users (
 );
 
 -- ----------------------------------------------------------------------------
--- FRIENDSHIPS — amitiés réciproques (pas de followers).
--- Normaliser : user_a_id = min(user1, user2), user_b_id = max(user1, user2).
--- status : PENDING | ACCEPTED | BLOCKED
+-- FRIENDSHIPS — table historique du premier schéma, conservée pour éviter une
+-- migration destructive. Le modèle actif est `follows` (migration 005) :
+-- l'amitié est dérivée de deux abonnements ACCEPTED réciproques.
 -- ----------------------------------------------------------------------------
 CREATE TABLE friendships (
     user_a_id TEXT NOT NULL,

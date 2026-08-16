@@ -2,6 +2,17 @@
 
 Dernière mise à jour : 2026-08-15 (mockups + retours design + mappy)
 
+## Graphe social (règle produit 2026-08-16)
+
+- Abonnements unilatéraux : la Home reçoit les publications des comptes suivis.
+- Deux abonnements `ACCEPTED` réciproques créent une amitié ; le cui-to-cui est
+  réservé à cette relation.
+- Aucun compteur public d'abonnés, likes ou trending.
+- Transmission : nouvelle publication livrée aux abonnés du transmetteur via
+  le hub le plus proche.
+- Migration 005 : table `follows`. L'ancienne table `friendships` reste
+  seulement pour compatibilité historique et ne doit plus recevoir d'écriture.
+
 ## Décisions design (retours utilisateur 2026-08-15)
 
 Série Styles :

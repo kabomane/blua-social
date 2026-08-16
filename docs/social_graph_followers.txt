@@ -1,0 +1,78 @@
+================================================================================
+BLUE ATMOSPHERE — GRAPHE SOCIAL : ABONNEMENTS ET AMITIÉS
+================================================================================
+
+STATUT
+------
+
+Cette règle remplace les anciennes règles « amis uniquement » dans les documents
+de conception antérieurs.
+
+================================================================================
+1. ABONNEMENT
+================================================================================
+
+Un abonnement est unilatéral :
+
+    Alice suit Bob
+
+Alice reçoit les publications Home de Bob une fois leur livraison arrivée.
+Bob ne reçoit pas automatiquement celles d'Alice.
+
+Les comptes publics acceptent les abonnements immédiatement. Un compte privé
+peut exiger l'acceptation de la demande.
+
+Il n'existe aucun compteur public d'abonnés ou d'abonnements, ni classement de
+popularité. L'abonnement sert à choisir son flux, pas à mesurer un statut.
+
+================================================================================
+2. AMITIÉ
+================================================================================
+
+Une amitié est dérivée de deux abonnements actifs :
+
+    Alice suit Bob + Bob suit Alice = Alice et Bob sont amis
+
+L'amitié ne nécessite donc pas une table métier indépendante au nouveau modèle.
+Elle donne accès aux communications intimes :
+
+- cui-to-cui ;
+- autres fonctions explicitement réservées aux amis.
+
+La suppression d'un abonnement retire l'amitié dérivée si la réciprocité
+n'existe plus.
+
+================================================================================
+3. HOME ET TRANSMISSION
+================================================================================
+
+Home affiche les publications des comptes suivis dont la livraison associée au
+lecteur est arrivée, plus les échos de branches.
+
+Transmettre crée une nouvelle publication Home de l'utilisateur transmetteur.
+Elle est diffusée à SES abonnés selon les règles Home via hub :
+
+    transmetteur -> hub le plus proche -> abonnés
+
+Une transmission consomme une action de communication et suit les délais
+réels ; elle ne réalise jamais un repost instantané ou un multicast gratuit.
+
+================================================================================
+4. DONNÉES MVP
+================================================================================
+
+Table `follows` :
+
+- follower_id ;
+- followed_id ;
+- status (PENDING ou ACCEPTED) ;
+- created_at ;
+- accepted_at.
+
+Contraintes : follower_id != followed_id ; clé primaire (follower_id,
+followed_id). Une relation d'amitié est obtenue par l'existence de deux lignes
+ACCEPTED inversées.
+
+================================================================================
+FIN
+================================================================================

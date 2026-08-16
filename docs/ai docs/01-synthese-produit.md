@@ -13,19 +13,20 @@ vraiment. »
 
 | Espace | Rôle | Équivalent |
 |---|---|---|
-| **Home** | publications publiques des amis + échos de branches (découverte) | timeline personnelle |
+| **Home** | publications des abonnements + échos de branches (découverte) | timeline personnelle |
 | **Branches** | communautés attachées à une position GPS **immuable** | subreddit + lieu numérique |
 | **Cui-to-cui** | conversation privée 1:1 | DM |
 
 ## Règles sociales clés
 
-- **Amitiés réciproques uniquement** — pas de followers, pas de likes,
-  pas de compteurs de popularité, pas de trending.
+- **Abonnements unilatéraux** : Home reçoit les comptes suivis. Deux
+  abonnements réciproques créent une amitié, requise pour le cui-to-cui.
+  Pas de likes, de compteurs publics de popularité ou de trending.
 - L'interaction principale est **répondre** (coûte un pigeon).
 - **Transmission** (repost) : consomme un pigeon, propagation réelle de
   proche en proche — pas de multicast gratuit.
 - 1 post Home = 1 action d'envoi : auteur → hub le plus proche, puis une
-  livraison distincte du hub vers chaque ami. Chaque ami reçoit donc à un
+  livraison distincte du hub vers chaque abonné. Chaque abonné reçoit donc à un
   moment différent ; le pigeon/slot de l'auteur est libéré à son arrivée au hub.
 - **Pigeons entrants invisibles** : surprise à l'arrivée, jamais de
   « un message arrive dans 17 min ». Les pigeons **sortants** sont visibles.
@@ -66,7 +67,8 @@ La **timeline complète** est sauvegardée ; l'état courant = timeline + now.
 
 ## MVP (V0)
 
-Compte, localisation approx., amis, pigeons limités, Home amis, branches
+Compte, localisation précise, abonnements, amitié dérivée, pigeons limités,
+Home abonnements, branches
 publiques géolocalisées, envoi branche, cui-to-cui, délais par distance,
 réponses, notifications d'arrivée, exploration simple.
 **Hors MVP** : collection d'oiseaux, carte 3D, algos complexes, reposts
