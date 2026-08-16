@@ -57,6 +57,11 @@ Elle est diffusée à SES abonnés selon les règles Home via hub :
 Une transmission consomme une action de communication et suit les délais
 réels ; elle ne réalise jamais un repost instantané ou un multicast gratuit.
 
+Répondre et transmettre proposent les deux méthodes d'envoi : pigeon ou lettre.
+Chaque action consomme une unité de la méthode choisie. Une réponse de l'auteur
+est visible dans son propre fil sous forme pointillée tant que sa livraison est
+en cours ; elle n'est pas encore une réponse arrivée pour les autres lecteurs.
+
 ================================================================================
 4. DONNÉES MVP
 ================================================================================
