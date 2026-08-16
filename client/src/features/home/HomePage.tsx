@@ -24,20 +24,48 @@ interface Props {
   onLogout: () => void
 }
 
+/**
+ * Libellé d'arrivée homogène, sans préfixe « il y a ».
+ * < 1 h : min · aujourd'hui : h · nuit : cette nuit · hier : hier ·
+ * < 30 j : j · < 24 mois : mois · ensuite : ans.
+ */
+function formatArrivalAge(arrivedAt: number, now = new Date()): string {
+  const date = new Date(arrivedAt)
+  const elapsedMs = Math.max(0, now.getTime() - arrivedAt)
+  const minutes = Math.floor(elapsedMs / 60_000)
+  const hours = Math.floor(elapsedMs / 3_600_000)
+  const days = Math.floor(elapsedMs / 86_400_000)
+  const isToday = date.toDateString() === now.toDateString()
+
+  if (isToday && date.getHours() < 6) return 'cette nuit'
+  if (minutes < 1) return 'maintenant'
+  if (minutes < 60) return `${minutes} min`
+  if (isToday) return `${hours}h`
+
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  if (date.toDateString() === yesterday.toDateString()) return 'hier'
+  if (days < 30) return `${days}j`
+
+  const months = Math.floor(days / 30)
+  if (months < 24) return `${months} mois`
+  return `${Math.floor(months / 12)} ans`
+}
+
 // ---------------------------------------------------------------------------
 // Données de démonstration — remplacées par l'API (messages/deliveries)
 // quand le backend feed sera branché.
 // ---------------------------------------------------------------------------
+const DEMO_NOW = Date.now()
 const DEMO_FEED = [
   {
     id: 'm1',
     author: 'Alice',
     handle: 'alice',
-    city: 'Lyon',
     color: '#f47f2a',
     method: 'BIRD' as const,
-    travel: '391 km',
-    arrived: 'il y a 20 min',
+    distance: '391 km',
+    arrivedAt: DEMO_NOW - 20 * 60_000,
     text: "Quelqu'un a vu le film hier soir au ciné-club ? Je n'arrête pas d'y penser…",
   },
   {
@@ -53,22 +81,20 @@ const DEMO_FEED = [
     id: 'm2',
     author: 'Marc',
     handle: 'marc',
-    city: 'Bruxelles',
     color: '#7d4cd6',
     method: 'POST' as const,
-    travel: '264 km · via Paris',
-    arrived: 'il y a 2 h',
+    distance: '264 km',
+    arrivedAt: DEMO_NOW - 2 * 3_600_000,
     text: "Je viens de rentrer du Japon. J'ai laissé une branche là-bas, près du Fuji — envoyez-y un message un jour.",
   },
   {
     id: 'm3',
     author: 'Emma',
     handle: 'emma',
-    city: 'Tokyo',
     color: '#d64c7d',
     method: 'BIRD' as const,
-    travel: '9 726 km · 29 j',
-    arrived: 'cette nuit',
+    distance: '9 726 km',
+    arrivedAt: DEMO_NOW - 29 * 86_400_000,
     text: "Ce message a quitté Tokyo il y a un mois. S'il est arrivé jusqu'à toi, raconte-moi Paris.",
   },
 ]
@@ -320,7 +346,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   >
                     {p.method === 'BIRD' ? <IconBird /> : <IconMail />}
                     <span>
-                      {p.arrived} · {p.travel}
+                    {formatArrivalAge(p.arrivedAt)} · {p.distance}
                     </span>
                   </div>
                 </div>
