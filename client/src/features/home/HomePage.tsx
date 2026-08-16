@@ -222,6 +222,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
     return note.replies.length + (pendingReplies[note.id]?.length ?? 0)
   }
 
+  function closeActionComposer() {
+    setReplyFor(null)
+    setTransmitFor(null)
+    setReplyText('')
+  }
+
   function openReply(note: Note) {
     setReplyFor(note.id)
     setTransmitFor(null)
@@ -246,7 +252,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
       ],
     }))
     setReplyText('')
-    setReplyFor(null)
+    closeActionComposer()
   }
 
   function openTransmit(note: Note) {
@@ -266,7 +272,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
       ...counts,
       [note.id]: (counts[note.id] ?? 0) + 1,
     }))
-    setTransmitFor(null)
+    closeActionComposer()
   }
 
   const panel =
@@ -306,7 +312,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
             <button
               onClick={() => {
                 setSelectedPost(null)
-                setReplyFor(null)
+                closeActionComposer()
               }}
               className={'rounded-full px-3 py-2 text-sm font-bold hover:bg-sky-50 dark:hover:bg-night-2 ' + mutedText}
             >
@@ -372,7 +378,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => setReplyFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                    <button type="button" onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
                     <button type="submit" disabled={!replyText.trim() || !carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Répondre</button>
                   </div>
                 </div>
@@ -388,7 +394,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
-                    <button onClick={() => setTransmitFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                    <button onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
                     <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
                   </div>
                 </div>
@@ -679,7 +685,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                       <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => setReplyFor(null)}
+                        onClick={closeActionComposer}
                         className={'px-2 py-2 text-[13px] font-bold ' + mutedText}
                       >
                         Annuler
@@ -707,7 +713,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
                       <div className="flex gap-2">
-                        <button onClick={() => setTransmitFor(null)} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
+                        <button onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
                         <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
                       </div>
                     </div>
