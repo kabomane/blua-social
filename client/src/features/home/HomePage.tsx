@@ -219,7 +219,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
               <div className="min-w-0">
                 <b className="block truncate text-sm">{user.username}</b>
                 <small className={'block truncate text-xs ' + mutedText}>
-                  @{user.username} · {user.city ?? '?'}
+                  @{user.username}
                 </small>
               </div>
               <div className="ml-auto flex shrink-0 gap-0.5">
@@ -308,7 +308,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   <div>
                     <b className="text-[15px]">{p.author}</b>
                     <small className={'block text-[13px] ' + mutedText}>
-                      @{p.handle} · {p.city}
+                      @{p.handle}
                     </small>
                   </div>
                   {/* méta compacte : une seule ligne */}
