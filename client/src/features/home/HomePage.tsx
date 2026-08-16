@@ -319,6 +319,14 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
               ← Home
             </button>
             <b className="text-[17px]">Note</b>
+            <div className={'ml-auto flex items-center gap-3 text-[13px] font-bold ' + mutedText}>
+              <span className="flex items-center gap-1" title="Pigeons disponibles">
+                <IconBird className="text-base" /> {pigeonsFree}
+              </span>
+              <span className="flex items-center gap-1" title="Lettres disponibles">
+                <IconMail className="text-base" /> {stamps}
+              </span>
+            </div>
           </div>
         </header>
 
