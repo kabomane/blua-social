@@ -1,0 +1,1331 @@
+================================================================================
+ARCHITECTURE SQLITE MVP — PROJET RÉSEAU SOCIAL ASYNCHRONE
+================================================================================
+
+
+1. OBJECTIF
+================================================================================
+
+Pour le MVP, utiliser UNE SEULE base SQLite :
+
+    data/app.db
+
+avec :
+
+    PRAGMA journal_mode = WAL;
+    PRAGMA foreign_keys = ON;
+    PRAGMA busy_timeout = 5000;
+
+Pourquoi une seule DB au départ :
+
+- garder les transactions simples ;
+- éviter de répartir une même opération métier sur plusieurs fichiers ;
+- permettre à SQLite de garantir l'atomicité des opérations ;
+- simplifier énormément le développement du MVP ;
+- WAL permet aux lectures de continuer pendant les écritures ;
+- les écritures seront courtes et relativement peu nombreuses ;
+- aucun besoin d'optimiser prématurément pour des millions d'utilisateurs.
+
+
+================================================================================
+2. ARCHITECTURE GÉNÉRALE
+================================================================================
+
+                         NODE.JS API
+                              |
+                              v
+                    +-------------------+
+                    |      app.db       |
+                    |    SQLite WAL     |
+                    +-------------------+
+                              |
+             +----------------+----------------+
+             |                |                |
+             v                v                v
+           SOCIAL          CONTENT          TEMPORALITÉ
+             |                |                |
+           users           messages         deliveries
+           friends         replies          pigeon_actions
+           branches        DM               notifications
+           memberships     Home
+
+
+Les différentes parties sont séparées LOGIQUEMENT dans le code,
+mais restent PHYSIQUEMENT dans la même base SQLite.
+
+
+================================================================================
+3. STRUCTURE DU PROJET
+================================================================================
+
+project/
+|
+├── data/
+│   └── app.db
+│
+├── src/
+│   |
+│   ├── database/
+│   │   ├── db.js
+│   │   └── migrations/
+│   |
+│   ├── users/
+│   ├── friendships/
+│   ├── branches/
+│   ├── messages/
+│   ├── deliveries/
+│   ├── pigeons/
+│   ├── notifications/
+│   |
+│   └── delivery-engine/
+│       ├── birds.js
+│       ├── hubs.js
+│       ├── rules.js
+│       ├── haversine.js
+│       ├── bird.js
+│       └── post.js
+│
+└── package.json
+
+
+================================================================================
+4. USERS
+================================================================================
+
+CREATE TABLE users (
+    id TEXT PRIMARY KEY,
+
+    username TEXT NOT NULL UNIQUE,
+
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+
+    city TEXT,
+    country_code TEXT,
+    timezone TEXT,
+
+    created_at INTEGER NOT NULL
+);
+
+
+Les coordonnées précises restent uniquement côté serveur.
+
+L'interface peut afficher :
+
+    Paris
+
+au lieu de :
+
+    48.856614, 2.352221
+
+
+================================================================================
+5. FRIENDSHIPS
+================================================================================
+
+Le réseau repose sur des AMITIÉS RÉCIPROQUES, pas sur followers/following.
+
+
+CREATE TABLE friendships (
+    user_a_id TEXT NOT NULL,
+    user_b_id TEXT NOT NULL,
+
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+
+    PRIMARY KEY (user_a_id, user_b_id),
+
+    FOREIGN KEY (user_a_id) REFERENCES users(id),
+    FOREIGN KEY (user_b_id) REFERENCES users(id)
+);
+
+
+CREATE INDEX friendships_a
+ON friendships(user_a_id);
+
+CREATE INDEX friendships_b
+ON friendships(user_b_id);
+
+
+Important :
+
+Toujours normaliser les IDs pour éviter :
+
+    Alice / Bob
+
+et :
+
+    Bob / Alice
+
+comme deux relations différentes.
+
+Par exemple :
+
+    user_a_id = min(user1, user2)
+    user_b_id = max(user1, user2)
+
+
+================================================================================
+6. BRANCHES
+================================================================================
+
+CREATE TABLE branches (
+    id TEXT PRIMARY KEY,
+
+    name TEXT NOT NULL,
+
+    owner_id TEXT NOT NULL,
+
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+
+    visibility TEXT NOT NULL DEFAULT 'PUBLIC',
+
+    created_at INTEGER NOT NULL,
+    archived_at INTEGER,
+
+    FOREIGN KEY (owner_id) REFERENCES users(id)
+);
+
+
+CREATE INDEX branches_location
+ON branches(latitude, longitude);
+
+
+Une branche possède une position géographique permanente.
+
+Même si son créateur déménage :
+
+    branche créée à Tokyo
+            |
+            v
+    reste à Tokyo
+
+
+================================================================================
+7. MEMBERSHIPS DE BRANCHES
+================================================================================
+
+CREATE TABLE branch_memberships (
+    branch_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+
+    role TEXT NOT NULL DEFAULT 'MEMBER',
+
+    joined_at INTEGER NOT NULL,
+
+    PRIMARY KEY (branch_id, user_id),
+
+    FOREIGN KEY (branch_id) REFERENCES branches(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+
+CREATE INDEX memberships_user
+ON branch_memberships(user_id);
+
+
+Les rôles pourront être :
+
+    OWNER
+    MODERATOR
+    MEMBER
+
+
+================================================================================
+8. MESSAGE = CONTENU LOGIQUE
+================================================================================
+
+Ne PAS créer une table différente pour :
+
+    home_posts
+    branch_messages
+    direct_messages
+    replies
+
+Utiliser une seule table messages.
+
+
+CREATE TABLE messages (
+    id TEXT PRIMARY KEY,
+
+    author_id TEXT NOT NULL,
+
+    type TEXT NOT NULL,
+
+    content TEXT NOT NULL,
+
+    branch_id TEXT,
+    recipient_user_id TEXT,
+    parent_message_id TEXT,
+
+    created_at INTEGER NOT NULL,
+
+    FOREIGN KEY (author_id) REFERENCES users(id),
+    FOREIGN KEY (branch_id) REFERENCES branches(id),
+    FOREIGN KEY (recipient_user_id) REFERENCES users(id),
+    FOREIGN KEY (parent_message_id) REFERENCES messages(id)
+);
+
+
+Types possibles :
+
+    HOME
+    BRANCH
+    DIRECT
+    REPLY
+
+
+Exemples :
+
+
+DM :
+
+    type = DIRECT
+    recipient_user_id = USER_BOB
+
+
+Message dans une branche :
+
+    type = BRANCH
+    branch_id = BRANCH_CINEMA
+
+
+Publication Home :
+
+    type = HOME
+
+
+Réponse :
+
+    type = REPLY
+    parent_message_id = MSG_123
+
+
+Indexes :
+
+CREATE INDEX messages_author_created
+ON messages(author_id, created_at DESC);
+
+CREATE INDEX messages_branch_created
+ON messages(branch_id, created_at DESC);
+
+CREATE INDEX messages_recipient_created
+ON messages(recipient_user_id, created_at DESC);
+
+
+================================================================================
+9. MESSAGE != DELIVERY
+================================================================================
+
+C'est une séparation fondamentale.
+
+Un MESSAGE représente :
+
+    "ce qui a été dit"
+
+Une DELIVERY représente :
+
+    "le voyage de ce message vers une destination"
+
+
+Exemple :
+
+Alice publie :
+
+    "Salut !"
+
+                        MESSAGE M1
+                            |
+               +------------+------------+
+               |            |            |
+               v            v            v
+             Bob          Emma         Lucas
+             Paris        Tokyo         Berlin
+               |            |            |
+               v            v            v
+             D1           D2           D3
+
+
+Un seul message peut donc posséder plusieurs deliveries.
+
+
+================================================================================
+10. DELIVERIES
+================================================================================
+
+CREATE TABLE deliveries (
+    id TEXT PRIMARY KEY,
+
+    message_id TEXT NOT NULL,
+
+    recipient_type TEXT NOT NULL,
+    recipient_id TEXT,
+
+    method TEXT NOT NULL,
+
+    origin_lat REAL NOT NULL,
+    origin_lon REAL NOT NULL,
+
+    destination_lat REAL NOT NULL,
+    destination_lon REAL NOT NULL,
+
+    sent_at INTEGER NOT NULL,
+    delivered_at INTEGER NOT NULL,
+
+    distance_km REAL,
+
+    timeline_json TEXT,
+
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+
+
+recipient_type :
+
+    USER
+    BRANCH
+    HOME
+
+
+method :
+
+    BIRD
+    POST
+
+
+Indexes :
+
+CREATE INDEX deliveries_message
+ON deliveries(message_id);
+
+CREATE INDEX deliveries_arrival
+ON deliveries(delivered_at);
+
+CREATE INDEX deliveries_recipient_arrival
+ON deliveries(
+    recipient_type,
+    recipient_id,
+    delivered_at
+);
+
+
+================================================================================
+11. LE VOYAGE EST CALCULÉ UNE SEULE FOIS
+================================================================================
+
+Lorsque l'utilisateur clique sur ENVOYER :
+
+    API
+     |
+     v
+    récupère origine / destination
+     |
+     v
+    calcule distance
+     |
+     v
+    calcule route
+     |
+     v
+    calcule timeline
+     |
+     v
+    calcule delivered_at
+     |
+     v
+    sauvegarde tout
+
+
+Ensuite :
+
+    AUCUN recalcul complet.
+
+
+Exemple :
+
+    sent_at       = 14:00
+    delivered_at  = 18:37
+
+
+Les valeurs aléatoires doivent également être déterministes.
+
+Par exemple :
+
+    seed = message_id
+
+
+Ainsi un refresh ne peut pas modifier :
+
+    la vitesse
+    le trajet
+    l'heure d'arrivée
+
+
+================================================================================
+12. PAS BESOIN DE WORKER POUR FAIRE "ARRIVER" LES MESSAGES
+================================================================================
+
+Éviter pour le MVP :
+
+    message envoyé
+        |
+        v
+    attendre 3 heures
+        |
+        v
+    worker
+        |
+        v
+    UPDATE status = DELIVERED
+
+
+À la place :
+
+Le temps détermine directement la visibilité.
+
+
+Message existant :
+
+    sent_at      = 14:00
+    delivered_at = 18:00
+
+
+À 16:00 :
+
+    delivered_at > maintenant
+
+Donc :
+
+    invisible
+
+
+À 18:01 :
+
+    delivered_at <= maintenant
+
+Donc :
+
+    visible
+
+
+Exemple SQL :
+
+SELECT *
+FROM deliveries
+WHERE recipient_id = ?
+  AND delivered_at <= unixepoch()
+ORDER BY delivered_at DESC;
+
+
+Avantages :
+
+- aucune écriture nécessaire au moment de l'arrivée ;
+- beaucoup moins de contention SQLite ;
+- pas besoin de scheduler complexe ;
+- pas besoin de Redis ;
+- pas besoin de queue ;
+- pas besoin de worker permanent ;
+- architecture déterministe.
+
+
+================================================================================
+13. PIGEON = RESSOURCE TEMPORELLE
+================================================================================
+
+Même logique pour les pigeons.
+
+Ne pas stocker constamment :
+
+    AVAILABLE
+    BUSY
+    AVAILABLE
+    BUSY
+
+
+Stocker plutôt l'utilisation d'un pigeon.
+
+
+CREATE TABLE pigeon_actions (
+    id TEXT PRIMARY KEY,
+
+    user_id TEXT NOT NULL,
+    message_id TEXT NOT NULL,
+
+    action_type TEXT NOT NULL,
+
+    started_at INTEGER NOT NULL,
+    busy_until INTEGER NOT NULL,
+
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+
+
+CREATE INDEX pigeon_actions_active
+ON pigeon_actions(user_id, busy_until);
+
+
+Pour connaître les pigeons actuellement utilisés :
+
+SELECT COUNT(*)
+FROM pigeon_actions
+WHERE user_id = ?
+  AND busy_until > unixepoch();
+
+
+Si l'utilisateur possède 5 pigeons :
+
+    total = 5
+
+    active = SELECT COUNT(...)
+
+    available = total - active
+
+
+Exemple :
+
+    total pigeons : 5
+    occupés        : 3
+    disponibles    : 2
+
+
+Pas besoin d'UPDATE pour rendre le pigeon disponible.
+
+Lorsque :
+
+    busy_until <= maintenant
+
+il est automatiquement considéré comme disponible.
+
+
+================================================================================
+14. PIGEON = ACTION DE COMMUNICATION
+================================================================================
+
+Important :
+
+Un pigeon représente une ACTION DE COMMUNICATION.
+
+Pas forcément une livraison physique par destinataire.
+
+
+Exemple :
+
+Alice fait un post Home :
+
+    coût :
+        1 pigeon
+
+
+Mais le backend peut générer :
+
+                  MESSAGE
+                     |
+        +------------+------------+
+        |            |            |
+        v            v            v
+       Bob          Emma         Lucas
+
+
+Donc :
+
+    1 pigeon_action
+
+mais éventuellement :
+
+    N deliveries
+
+
+Actions consommant un pigeon :
+
+    envoyer un DM
+    publier sur Home
+    envoyer dans une branche
+    répondre
+    transmettre
+
+
+================================================================================
+15. TRANSACTION D'ENVOI
+================================================================================
+
+L'envoi complet doit rester atomique.
+
+Même fichier SQLite = transaction simple.
+
+
+BEGIN IMMEDIATE;
+
+    1. vérifier nombre de pigeons disponibles
+
+    2. INSERT message
+
+    3. INSERT pigeon_action
+
+    4. INSERT delivery
+
+       éventuellement :
+
+       INSERT delivery
+       INSERT delivery
+       INSERT delivery
+
+COMMIT;
+
+
+Pseudo Node.js :
+
+await db.exec("BEGIN IMMEDIATE");
+
+try {
+
+    // vérifier capacité pigeon
+
+    // créer message
+
+    // créer pigeon_action
+
+    // créer deliveries
+
+    await db.exec("COMMIT");
+
+} catch (err) {
+
+    await db.exec("ROLLBACK");
+
+    throw err;
+}
+
+
+Cela garantit qu'on ne peut pas avoir :
+
+    pigeon occupé
+    mais message inexistant
+
+
+ou :
+
+    message créé
+    mais aucune delivery
+
+
+================================================================================
+16. POURQUOI NE PAS DÉCOUPER EN PLUSIEURS .DB IMMÉDIATEMENT
+================================================================================
+
+Éviter :
+
+    users.db
+    pigeons.db
+    messages.db
+    deliveries.db
+    branches.db
+    notifications.db
+
+
+Car un seul envoi nécessiterait alors :
+
+    UPDATE pigeons.db
+
+        +
+
+    INSERT messages.db
+
+        +
+
+    INSERT deliveries.db
+
+
+On perdrait la simplicité transactionnelle.
+
+
+RÈGLE :
+
+    TOUT CE QUI DOIT ÊTRE ATOMIQUE
+    DOIT RESTER DANS LE MÊME FICHIER DB.
+
+
+Donc au minimum :
+
+    messages
+    deliveries
+    pigeon_actions
+
+doivent rester ensemble.
+
+
+================================================================================
+17. NOTIFICATIONS
+================================================================================
+
+CREATE TABLE notifications (
+    id TEXT PRIMARY KEY,
+
+    user_id TEXT NOT NULL,
+    type TEXT NOT NULL,
+
+    message_id TEXT,
+
+    visible_at INTEGER NOT NULL,
+    read_at INTEGER,
+
+    created_at INTEGER NOT NULL
+);
+
+
+CREATE INDEX notifications_user_visible
+ON notifications(user_id, visible_at DESC);
+
+
+Lecture :
+
+SELECT *
+FROM notifications
+WHERE user_id = ?
+  AND visible_at <= unixepoch()
+ORDER BY visible_at DESC
+LIMIT 30;
+
+
+Cela permet de garder le principe :
+
+    aucun message entrant visible avant son arrivée
+
+
+Puis soudain :
+
+    "Un pigeon vient d'arriver."
+
+
+================================================================================
+18. HOME — FAN-OUT ON READ
+================================================================================
+
+Pour le MVP :
+
+NE PAS précalculer une timeline Home pour chaque utilisateur.
+
+
+Lorsque l'utilisateur fait :
+
+    GET /home?limit=20
+
+
+Le backend fait :
+
+    récupérer ses amis
+            |
+            v
+    récupérer leurs messages HOME
+            |
+            v
+    vérifier quelles deliveries sont arrivées
+            |
+            v
+    récupérer quelques échos de branches
+            |
+            v
+    scorer / trier
+            |
+            v
+    LIMIT 20
+
+
+Architecture :
+
+GET /home
+    |
+    +--> friendships
+    |
+    +--> messages
+    |
+    +--> deliveries avec delivered_at <= now
+    |
+    +--> branches proches / actives
+    |
+    v
+tri
+    |
+    v
+20 résultats
+
+
+Pas besoin au MVP de :
+
+    home_feed
+    fanout_queue
+    feed_worker
+    Redis
+    Kafka
+    précalcul de millions de timelines
+
+
+================================================================================
+19. CONFIGURATION DU SYSTÈME DE LIVRAISON
+================================================================================
+
+Les données globales et relativement statiques restent dans le CODE :
+
+    oiseaux
+    hubs
+    gateways
+    règles de livraison
+
+
+Structure :
+
+delivery-engine/
+|
+├── birds.js
+├── hubs.js
+├── rules.js
+├── haversine.js
+├── bird.js
+└── post.js
+
+
+Exemple :
+
+export const DELIVERY_RULES = {
+
+    bird: {
+        speedKmH: 45,
+        routeFactor: 1.10,
+        flightHoursPerDay: 8,
+        speedVariance: 0.08
+    },
+
+    post: {
+        collectionMinHours: 2,
+        collectionMaxHours: 6,
+        planeSpeedKmH: 750
+    }
+
+};
+
+
+Avantages :
+
+- facilement versionnable avec Git ;
+- simple à modifier ;
+- pas besoin de requête SQL ;
+- logique métier regroupée ;
+- facilement testable.
+
+
+IMPORTANT :
+
+Chaque delivery sauvegarde les résultats réellement calculés.
+
+Ainsi :
+
+    rules v1
+        vitesse = 45 km/h
+
+Message envoyé aujourd'hui :
+        reste basé sur 45 km/h
+
+
+Puis :
+
+    rules v2
+        vitesse = 50 km/h
+
+Les nouveaux messages utilisent 50 km/h.
+
+Les anciens voyages ne changent PAS.
+
+
+================================================================================
+20. CONFIGURATION SQLITE
+================================================================================
+
+Au démarrage :
+
+PRAGMA journal_mode = WAL;
+PRAGMA foreign_keys = ON;
+PRAGMA busy_timeout = 5000;
+
+
+WAL permet principalement :
+
+    reader + reader     OK
+
+    reader + writer     OK
+
+    writer + writer     SERIALISÉ
+
+
+Donc :
+
+                 NODE.JS
+                    |
+         +----------+----------+
+         |          |          |
+         v          v          v
+       READ       READ       READ
+         \          |          /
+          \         |         /
+           +--------+--------+
+                    |
+                  app.db
+                    ^
+                    |
+                  WRITE
+                    |
+             transaction courte
+
+
+================================================================================
+21. RÈGLE IMPORTANTE : TRANSACTIONS COURTES
+================================================================================
+
+Bon :
+
+BEGIN;
+
+INSERT message;
+INSERT pigeon_action;
+INSERT deliveries;
+
+COMMIT;
+
+
+Mauvais :
+
+BEGIN;
+
+INSERT message;
+
+await appelHTTPQuiPrend5Secondes();
+
+INSERT delivery;
+
+COMMIT;
+
+
+Ne jamais garder une transaction ouverte pendant :
+
+- appel HTTP externe ;
+- calcul long ;
+- attente artificielle ;
+- traitement d'image ;
+- timeout ;
+- opération réseau.
+
+
+Calculer le trajet AVANT ou pendant une opération CPU très courte,
+puis effectuer rapidement la transaction SQLite.
+
+
+================================================================================
+22. INDEXES PRINCIPAUX MVP
+================================================================================
+
+users :
+
+    username UNIQUE
+
+
+friendships :
+
+    user_a_id
+    user_b_id
+
+
+branches :
+
+    latitude, longitude
+
+
+branch_memberships :
+
+    user_id
+    branch_id, user_id
+
+
+messages :
+
+    author_id, created_at
+
+    branch_id, created_at
+
+    recipient_user_id, created_at
+
+
+deliveries :
+
+    message_id
+
+    delivered_at
+
+    recipient_type, recipient_id, delivered_at
+
+
+pigeon_actions :
+
+    user_id, busy_until
+
+
+notifications :
+
+    user_id, visible_at
+
+
+================================================================================
+23. CE QU'IL NE FAUT PAS AJOUTER AU MVP
+================================================================================
+
+Pas besoin immédiatement de :
+
+    PostgreSQL
+    Redis
+    Kafka
+    RabbitMQ
+    BullMQ
+    worker farm
+    scheduler distribué
+    microservices
+    dizaines de fichiers SQLite
+    sharding
+    feed précalculé
+    cache complexe
+    Elasticsearch
+
+
+Le MVP doit d'abord valider la boucle :
+
+    ouvrir
+      |
+      v
+    découvrir
+      |
+      v
+    envoyer
+      |
+      v
+    attendre
+      |
+      v
+    recevoir
+      |
+      v
+    répondre
+      |
+      v
+    revenir
+
+
+================================================================================
+24. ÉVOLUTION PLUS TARD
+================================================================================
+
+Commencer :
+
+                    app.db
+
+
+Si un jour les métriques montrent une vraie contention en écriture,
+on pourra découper.
+
+
+Exemple futur :
+
+                     NODE
+                      |
+             +--------+--------+
+             |                 |
+             v                 v
+         social.db         traffic.db
+             |                 |
+           users            messages
+           friends          deliveries
+           branches         pigeon_actions
+           memberships      notifications
+
+
+Ainsi :
+
+    modification friendship
+            |
+            v
+        social.db
+
+
+et simultanément :
+
+    envoi message
+            |
+            v
+        traffic.db
+
+
+Mais :
+
+    message
+    delivery
+    pigeon_action
+
+restent ensemble car ils font partie de la même transaction métier.
+
+
+================================================================================
+25. ARCHITECTURE CONCEPTUELLE FINALE
+================================================================================
+
+
+Utilisateur effectue une action :
+
+                    USER
+                      |
+                      v
+            COMMUNICATION ACTION
+                      |
+                      |
+                consomme 1 pigeon
+                      |
+                      v
+                 MESSAGE
+                      |
+            +---------+---------+
+            |         |         |
+            v         v         v
+         DELIVERY  DELIVERY  DELIVERY
+            |         |         |
+          Paris     Tokyo      Berlin
+            |         |         |
+          14:20     18:52      15:04
+
+
+Le MESSAGE contient :
+
+    le contenu
+
+
+La PIGEON_ACTION contient :
+
+    le coût / occupation de la capacité sociale
+
+
+La DELIVERY contient :
+
+    le voyage
+    l'origine
+    la destination
+    la méthode
+    la distance
+    la timeline
+    l'heure d'arrivée
+
+
+================================================================================
+26. PRINCIPE CENTRAL DU BACKEND
+================================================================================
+
+Beaucoup d'états ne nécessitent PAS d'UPDATE.
+
+Ils sont dérivés du temps.
+
+
+MESSAGE VISIBLE :
+
+    delivered_at <= now
+
+
+PIGEON DISPONIBLE :
+
+    busy_until <= now
+
+
+NOTIFICATION VISIBLE :
+
+    visible_at <= now
+
+
+Donc le temps remplace énormément de :
+
+    workers
+    UPDATE
+    cron jobs
+    queues
+
+
+Ce point est particulièrement intéressant avec SQLite,
+car il réduit fortement le nombre d'écritures concurrentes.
+
+
+================================================================================
+27. ARCHITECTURE MVP RETENUE
+================================================================================
+
+STACK :
+
+    Node.js
+        +
+    sqlite3 / wrapper Promise
+        +
+    SQLite
+        +
+    WAL
+
+
+DATABASE :
+
+    UNE SEULE app.db
+
+
+TABLES PRINCIPALES :
+
+    users
+    friendships
+    branches
+    branch_memberships
+    messages
+    deliveries
+    pigeon_actions
+    notifications
+
+
+CONFIGURATION MÉTIER :
+
+    birds.js
+    hubs.js
+    rules.js
+
+
+PRINCIPES :
+
+    1. Message != Delivery.
+
+    2. Un pigeon représente une action de communication.
+
+    3. Une action peut générer plusieurs deliveries.
+
+    4. Les voyages sont calculés une seule fois à l'envoi.
+
+    5. delivered_at détermine la visibilité.
+
+    6. busy_until détermine la disponibilité des pigeons.
+
+    7. visible_at détermine l'apparition des notifications.
+
+    8. Pas de worker nécessaire pour faire arriver un message au MVP.
+
+    9. Les écritures SQLite doivent être très courtes.
+
+    10. Utiliser WAL.
+
+    11. Garder les opérations atomiques dans le même fichier DB.
+
+    12. Faire du fan-out on read pour la Home au MVP.
+
+    13. Ne découper la DB que lorsqu'un problème réel de contention apparaît.
+
+    14. Ne pas optimiser pour des millions d'utilisateurs avant d'avoir validé
+        le produit avec les premiers utilisateurs.
+
+
+================================================================================
+FIN
+================================================================================

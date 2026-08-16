@@ -1,0 +1,3853 @@
+================================================================================
+PROJET — RÉSEAU SOCIAL ASYNCHRONE À BASE DE PIGEONS VOYAGEURS
+DOCUMENT DE CONCEPTION / NOTES PRODUIT
+================================================================================
+
+STATUT
+------
+
+Concept en cours de définition.
+
+Idée centrale :
+Créer une application hybride entre réseau social et messagerie dans laquelle
+toute communication est matérialisée par des oiseaux voyageurs.
+
+Contrairement à une simple messagerie avec une animation de pigeon, le déplacement
+des oiseaux influence réellement :
+
+- le délai de réception ;
+- la capacité à communiquer ;
+- la propagation d'un message ;
+- la géographie du réseau ;
+- le rythme des conversations ;
+- la découverte de contenu ;
+- l'activité des communautés.
+
+
+================================================================================
+1. VISION GÉNÉRALE
+================================================================================
+
+Le produit n'est PAS :
+
+- une messagerie instantanée classique ;
+- Twitter avec un thème de pigeons ;
+- Discord avec des salons géolocalisés ;
+- un réseau social avec simplement un délai artificiel sur les messages.
+
+Le produit est :
+
+UN RÉSEAU SOCIAL GÉOGRAPHIQUE ET ASYNCHRONE
+DANS LEQUEL LES MESSAGES DOIVENT VOYAGER
+JUSQU'À LEUR DESTINATION.
+
+
+Concept résumé :
+
+    UTILISATEUR
+        |
+        | écrit un message
+        v
+      OISEAU
+        |
+        | voyage
+        v
+    DESTINATION
+        |
+        +--> Home d'un ami
+        +--> Branche publique
+        +--> Branche privée
+        +--> Cui-to-cui
+
+
+La distance n'est donc pas uniquement esthétique.
+
+Elle fait partie du protocole social.
+
+
+================================================================================
+2. PRINCIPE FONDAMENTAL : LE TEMPS
+================================================================================
+
+Sur un réseau classique :
+
+    écrire
+      |
+      v
+    publier
+      |
+      v
+    visible immédiatement
+
+
+Ici :
+
+    écrire
+      |
+      v
+    choisir destination
+      |
+      v
+    pigeon part
+      |
+      v
+    voyage
+      |
+      v
+    arrivée
+      |
+      v
+    message visible
+
+
+Le message n'est pas considéré comme "reçu" avant l'arrivée de l'oiseau.
+
+
+Exemple :
+
+    Paris ----------------🐦----------------> Londres
+
+    départ : 14:00
+    arrivée estimée : 16:20
+
+Le destinataire ne voit pas le contenu avant 16:20.
+
+
+IMPORTANT :
+
+Le délai doit être suffisamment important pour donner du sens au mécanisme,
+mais pas nécessairement reproduire parfaitement la vitesse réelle d'un pigeon.
+
+Il s'agit d'un équilibre produit entre :
+
+- cohérence de l'univers ;
+- anticipation ;
+- frustration ;
+- fréquence d'utilisation.
+
+
+================================================================================
+3. LE PIGEON COMME "BANDE PASSANTE PERSONNELLE"
+================================================================================
+
+Une des mécaniques fondamentales du produit :
+
+UN UTILISATEUR NE PEUT PAS ENVOYER UN NOMBRE ILLIMITÉ DE MESSAGES EN PARALLÈLE.
+
+
+Exemple :
+
+    MON PIGEONNIER
+
+    🐦 Auguste       DISPONIBLE
+    🐦 Bernard       EN VOL
+    🐦 Maurice       EN VOL
+    🐦 Simone        DISPONIBLE
+    🐦 Gaston        EN VOL
+
+
+Capacité :
+
+    total pigeons : 5
+    disponibles : 2
+    en vol : 3
+
+
+L'utilisateur peut donc actuellement effectuer 2 nouvelles actions nécessitant
+un pigeon.
+
+
+Pourquoi cette mécanique est essentielle :
+
+- empêche le spam ;
+- ralentit naturellement le réseau ;
+- oblige à choisir ses interactions ;
+- donne une vraie fonction aux pigeons ;
+- empêche l'utilisateur d'envoyer simultanément un message :
+    - sur la Home ;
+    - dans 25 branches ;
+    - à 10 personnes ;
+- donne de la valeur à chaque envoi ;
+- différencie structurellement l'application des autres réseaux sociaux.
+
+
+À ÉVITER :
+
+    "10 posts maximum par jour"
+
+C'est une limite artificielle.
+
+
+PRÉFÉRER :
+
+    "Tu n'as actuellement plus de pigeon disponible."
+
+La contrainte fait alors partie de l'univers du produit.
+
+
+================================================================================
+4. DISPONIBILITÉ DES PIGEONS
+================================================================================
+
+Cycle simple recommandé :
+
+    pigeon disponible
+          |
+          | message envoyé
+          v
+      pigeon en vol
+          |
+          | livraison effectuée
+          v
+    pigeon disponible
+
+
+IMPORTANT :
+
+Le pigeon ne devrait probablement PAS devoir effectuer physiquement le trajet
+retour avant d'être réutilisable.
+
+
+Sinon :
+
+    Paris -> Tokyo : 15h
+    Tokyo -> Paris : 15h
+
+    pigeon inutilisable pendant ~30h
+
+
+Ce serait potentiellement trop frustrant.
+
+
+Donc :
+
+    DÉPART
+      |
+      v
+    PIGEON OCCUPÉ
+      |
+      v
+    ARRIVÉE DU MESSAGE
+      |
+      v
+    SLOT PIGEON RÉCUPÉRÉ
+
+
+La fiction peut expliquer son retour de différentes manières sans imposer
+le trajet retour mécaniquement.
+
+
+================================================================================
+5. TYPES DE DESTINATIONS
+================================================================================
+
+Il existe plusieurs grandes formes de communication.
+
+
+----------------------------------------------------------------------
+5.1 HOME / PUBLIC
+----------------------------------------------------------------------
+
+Équivalent conceptuel de la Home de Twitter/X.
+
+Mais contrairement à Twitter, ce n'est pas un flux mondial composé de comptes
+suivis.
+
+Le graphe social repose principalement sur LES AMIS.
+
+
+Sur la Home, l'utilisateur reçoit deux catégories principales de contenu :
+
+    1. messages publics provenant de ses amis ;
+    2. extraits / messages de branches pour découvrir le réseau.
+
+
+Structure :
+
+    HOME
+      |
+      +--> PUBLICATIONS DES AMIS
+      |
+      +--> ÉCHOS DE BRANCHES
+
+
+L'objectif :
+
+Même si l'utilisateur ne visite aucune branche, sa Home reste intéressante.
+
+Mais même s'il n'a encore aucun ami, il doit avoir quelque chose à explorer.
+
+
+================================================================================
+6. HOME — CONTENU DES AMIS
+================================================================================
+
+Un utilisateur peut envoyer une publication publique.
+
+Cette publication pourra ensuite arriver dans la Home de ses amis.
+
+
+Exemple :
+
+    Alice publie depuis Paris
+
+                    Alice
+                      |
+                message public
+                      |
+          +-----------+-----------+
+          |                       |
+         🐦                      🐦
+          |                       |
+        Bob                     Emma
+      Londres                  Tokyo
+
+
+Les messages peuvent arriver à différents moments selon la distance.
+
+
+Exemple :
+
+    Alice publie à 10:00
+
+    Bob / Paris :
+        arrivée 10:08
+
+    Marc / Bruxelles :
+        arrivée 10:45
+
+    Emma / Tokyo :
+        arrivée beaucoup plus tard
+
+
+Conséquence intéressante :
+
+LES HOMES NE SONT PAS SYNCHRONISÉES.
+
+
+Deux amis d'une même personne peuvent découvrir son message à des moments
+complètement différents.
+
+
+Cela crée naturellement :
+
+- propagation ;
+- temporalité ;
+- anticipation ;
+- différences géographiques ;
+- conversations non simultanées.
+
+
+================================================================================
+7. HOME — ÉCHOS DE BRANCHES
+================================================================================
+
+Une petite partie de la Home contient du contenu provenant de branches.
+
+
+But :
+
+- permettre la découverte ;
+- éviter le problème "je n'ai aucun ami donc l'application est vide" ;
+- montrer que le réseau est vivant ;
+- donner envie d'explorer une branche ;
+- aider les petites communautés à être découvertes.
+
+
+Exemple :
+
+    --------------------------------------------------
+    HOME
+    --------------------------------------------------
+
+    🐦 Alice
+    "Quelqu'un connaît ce film ?"
+
+
+    🐦 Marc
+    "Je viens de rentrer du Japon..."
+
+
+    ---------- ÉCHO D'UNE BRANCHE --------------------
+
+    🌿 CINÉMA
+
+    "Le dernier film de..."
+
+    82 pigeons arrivés aujourd'hui
+
+                [ VOIR LA BRANCHE ]
+
+
+IMPORTANT :
+
+Cette mécanique est techniquement une forme de recommandation.
+
+Mais elle ne doit pas devenir :
+
+    "algorithme infini d'optimisation de l'engagement"
+
+
+Le système peut être explicable et simple.
+
+
+Exemples de raisons de montrer une branche :
+
+- proche géographiquement ;
+- plusieurs amis la fréquentent ;
+- activité récente élevée ;
+- croissance récente ;
+- branche nouvellement créée dans la région ;
+- thématique sélectionnée par l'utilisateur ;
+- branche publique importante ;
+- forte arrivée de pigeons.
+
+
+Ratio possible lorsque l'utilisateur possède déjà un réseau social :
+
+    70-90 % contenu amis
+    10-30 % découverte branches
+
+
+Pour un utilisateur sans amis :
+
+    beaucoup plus de contenu de découverte.
+
+
+Évolution :
+
+    inscription
+       |
+       v
+    peu/pas d'amis
+       |
+       v
+    découverte importante
+       |
+       v
+    branches
+       |
+       v
+    rencontres
+       |
+       v
+    nouveaux amis
+       |
+       v
+    Home progressivement plus personnelle
+
+
+================================================================================
+8. AMIS À LA PLACE DES FOLLOWERS
+================================================================================
+
+Pas de système classique :
+
+    follower
+    following
+
+
+À la place :
+
+    AMITIÉ RÉCIPROQUE
+
+
+Exemple :
+
+    Alice <------ AMIS ------> Bob
+
+
+Conséquence :
+
+Un utilisateur ne peut pas accumuler 10 millions de followers simplement pour
+diffuser du contenu vers eux.
+
+
+Cela limite naturellement :
+
+- culture influenceur ;
+- compétition de visibilité ;
+- communication entièrement asymétrique ;
+- métriques de popularité omniprésentes.
+
+
+Un profil peut éventuellement afficher :
+
+    nombre d'amis
+
+mais il faut déterminer plus tard si cette valeur doit être publique ou non.
+
+
+================================================================================
+9. BRANCHES
+================================================================================
+
+Une branche représente une communauté / conversation persistante.
+
+
+Analogie approximative :
+
+    Reddit subreddit
+    +
+    groupe public
+    +
+    salon
+    +
+    lieu numérique
+
+
+Mais une branche possède une caractéristique essentielle :
+
+UNE BRANCHE EST ATTACHÉE À UNE POSITION GÉOGRAPHIQUE IMMUTABLE.
+
+
+Exemple :
+
+    branche créée à Londres
+
+    latitude : X
+    longitude : Y
+
+
+Même si son créateur :
+
+- retourne en France ;
+- déménage en Australie ;
+- supprime l'application ;
+- voyage ailleurs ;
+
+la branche reste à Londres.
+
+
+Cela donne aux branches une existence géographique indépendante de leur créateur.
+
+
+================================================================================
+10. EXEMPLE DE BRANCHE
+================================================================================
+
+    BRANCHE
+
+    Nom :
+        "Insomniaques de Soho"
+
+    Position :
+        Londres
+
+    Créée :
+        12 août 2026
+
+    Visibilité :
+        publique
+
+    Activité :
+        182 pigeons aujourd'hui
+
+    Membres / habitués :
+        ...
+
+
+Un message envoyé depuis Paris vers cette branche :
+
+    Paris ------------------🐦------------------> Londres
+
+
+Un message envoyé par quelqu'un présent à Londres :
+
+    Londres --🐦--> branche
+
+
+Donc la distance avec la branche influence le délai.
+
+
+================================================================================
+11. TYPES DE BRANCHES
+================================================================================
+
+----------------------------------------------------------------------
+11.1 BRANCHE PUBLIQUE
+----------------------------------------------------------------------
+
+Tout le monde peut :
+
+- la découvrir ;
+- la consulter ;
+- potentiellement y participer ;
+- voir son activité.
+
+Selon les règles de modération.
+
+
+----------------------------------------------------------------------
+11.2 BRANCHE PRIVÉE
+----------------------------------------------------------------------
+
+Accès limité.
+
+Possibilités :
+
+- invitation ;
+- validation ;
+- code ;
+- liste de membres ;
+- amis uniquement.
+
+
+La branche reste néanmoins géographiquement située.
+
+
+================================================================================
+12. CRÉATION DES BRANCHES
+================================================================================
+
+Lors de la création :
+
+    utilisateur
+       |
+       v
+    position actuelle
+       |
+       v
+    latitude / longitude
+       |
+       v
+    création branche
+
+
+Les coordonnées sont enregistrées définitivement.
+
+
+Exemple :
+
+    utilisateur français en voyage à Tokyo
+             |
+             v
+    crée "Français à Tokyo"
+             |
+             v
+    branche attachée à Tokyo
+
+
+Six mois plus tard :
+
+    utilisateur en France
+
+mais :
+
+    branche toujours à Tokyo.
+
+
+================================================================================
+13. QUOTA DE CRÉATION DE BRANCHES
+================================================================================
+
+Il faut empêcher :
+
+    utilisateur
+       |
+       v
+    crée 500 branches
+       |
+       v
+    réseau rempli de communautés mortes
+
+
+Solution proposée :
+
+QUOTA DE BRANCHES PUBLIQUES "SOUS RESPONSABILITÉ".
+
+
+Exemple initial :
+
+    3 branches publiques maximum créées / administrées en tant que propriétaire
+
+
+À définir précisément après tests.
+
+
+IMPORTANT :
+
+Le quota concerne la responsabilité / propriété, pas nécessairement les branches
+auxquelles l'utilisateur participe.
+
+
+Exemple :
+
+    Alice participe à 40 branches
+    Alice possède 2 branches
+
+    quota : 2 / 3
+
+
+================================================================================
+14. PROPRIÉTÉ D'UNE BRANCHE PUBLIQUE
+================================================================================
+
+Une branche publique ne doit PAS pouvoir disparaître simplement parce que son
+créateur décide de partir.
+
+
+Problème :
+
+    Alice crée une branche
+             |
+             v
+    branche devient populaire
+             |
+             v
+    20 000 utilisateurs
+             |
+             v
+    Alice clique "supprimer"
+             |
+             X
+    communauté détruite
+
+
+Mauvais modèle.
+
+
+Une branche publique doit progressivement devenir un objet appartenant au réseau
+et à sa communauté davantage qu'à son créateur.
+
+
+================================================================================
+15. QUITTER / TRANSFÉRER UNE BRANCHE
+================================================================================
+
+Le propriétaire d'une branche publique peut décider de partir.
+
+
+Action :
+
+    QUITTER LA BRANCHE EN TANT QUE PROPRIÉTAIRE
+
+
+Conséquences :
+
+    ancien propriétaire
+        |
+        +--> perd droits de propriétaire
+        |
+        +--> récupère son quota
+        |
+        +--> peut éventuellement rester membre normal
+        |
+        +--> la branche continue d'exister
+
+
+La propriété doit être transférée.
+
+
+Possibilités :
+
+A. transfert manuel
+
+    propriétaire
+        |
+        v
+    choisit un successeur
+        |
+        v
+    successeur accepte
+        |
+        v
+    transfert
+
+
+B. transfert vers un autre modérateur
+
+    propriétaire
+        |
+        v
+    sélectionne un gardien existant
+
+
+C. système automatique si abandon
+
+    propriétaire inactif
+        |
+        v
+    branche toujours active
+        |
+        v
+    système cherche successeur légitime
+
+
+Critères possibles :
+
+- modérateur existant ;
+- ancienneté ;
+- activité ;
+- réputation ;
+- vote interne ;
+- nomination.
+
+
+================================================================================
+16. RÔLES DANS UNE BRANCHE
+================================================================================
+
+Structure possible :
+
+    PROPRIÉTAIRE / GARDIEN PRINCIPAL
+        |
+        +--> modérateurs / gardiens
+        |
+        +--> membres
+        |
+        +--> visiteurs
+
+
+Le terme "propriétaire" peut éventuellement être remplacé par un terme cohérent
+avec l'univers :
+
+- gardien ;
+- gardien de branche ;
+- maître de branche ;
+- intendant ;
+- perchkeeper / équivalent.
+
+
+À définir lors du travail de naming.
+
+
+================================================================================
+17. SUPPRESSION D'UNE BRANCHE
+================================================================================
+
+Il faut différencier :
+
+    branche privée
+    branche publique sans activité
+    branche publique active
+
+
+CAS 1 — branche privée personnelle :
+
+Le propriétaire peut probablement la supprimer.
+
+
+CAS 2 — branche publique jamais adoptée :
+
+Suppression possible sous certaines conditions.
+
+
+CAS 3 — branche publique active :
+
+Le propriétaire ne peut plus simplement la détruire.
+
+Il peut :
+
+    quitter
+    |
+    v
+    transférer responsabilité
+    |
+    v
+    récupérer quota
+
+
+La plateforme peut conserver un droit de suppression pour :
+
+- violation règles ;
+- spam ;
+- contenu illégal ;
+- doublon manifeste ;
+- branche abandonnée depuis très longtemps ;
+- modération.
+
+
+================================================================================
+18. ÉVITER LES BRANCHES MORTES
+================================================================================
+
+Problème :
+
+    10 000 utilisateurs
+    50 000 branches
+    45 000 branches mortes
+
+
+=> impression de réseau désert.
+
+
+Solutions complémentaires :
+
+1. quota de création ;
+2. découverte favorisant l'activité réelle ;
+3. archivage de branches inactives ;
+4. fusion éventuelle de doublons ;
+5. mécanisme de transfert ;
+6. création rendue légèrement "coûteuse" en capacité sociale ;
+7. éventuellement ancienneté minimale avant possibilité de créer beaucoup ;
+8. progression du quota selon participation saine.
+
+
+Une branche morte peut devenir :
+
+    ARCHIVÉE
+
+
+Puis potentiellement :
+
+    restaurée
+
+si quelqu'un souhaite reprendre l'espace.
+
+
+================================================================================
+19. DÉCOUVERTE DES BRANCHES
+================================================================================
+
+La découverte est fondamentale.
+
+Écran possible :
+
+    EXPLORER
+
+    ------------------------------------------------
+    PRÈS DE VOUS
+    ------------------------------------------------
+
+    🌿 Étudiants Paris
+       2,3 km
+
+    🌿 Photo de rue
+       4,1 km
+
+    🌿 Cinéma indépendant
+       6,7 km
+
+
+    ------------------------------------------------
+    TRÈS ACTIVES
+    ------------------------------------------------
+
+    🌿 Jeux vidéo
+       823 pigeons aujourd'hui
+
+    🌿 Développement / IA
+       601 pigeons aujourd'hui
+
+
+    ------------------------------------------------
+    VOS AMIS Y PASSENT
+    ------------------------------------------------
+
+    🌿 Photographie
+       4 amis
+
+
+    ------------------------------------------------
+    PIGEONS EN APPROCHE
+    ------------------------------------------------
+
+    🌿 Londres
+       forte activité
+
+
+Découverte possible par :
+
+- distance ;
+- carte ;
+- activité ;
+- amis ;
+- sujet ;
+- recherche ;
+- nouvelles branches ;
+- événements locaux.
+
+
+================================================================================
+20. PAS BESOIN DE "TRENDING TOPICS" CLASSIQUES
+================================================================================
+
+La mécanique des pigeons permet de représenter naturellement une activité
+exceptionnelle.
+
+
+Exemple normal :
+
+    🌿 Branche cinéma
+
+    🐦 🐦 🐦
+
+
+Pendant un événement :
+
+    🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦🐦
+
+
+Le produit peut simplement dire :
+
+    "187 pigeons ont atterri ici aujourd'hui."
+
+
+ou :
+
+    "Cette branche reçoit beaucoup de pigeons."
+
+
+Pas besoin d'une page :
+
+    #Trending
+    #Viral
+    #Top10
+
+
+L'activité physique du réseau peut constituer le signal.
+
+
+================================================================================
+21. CUI-TO-CUI
+================================================================================
+
+Équivalent des DM / messages privés individuels.
+
+
+Nom de travail :
+
+    CUI-TO-CUI
+
+
+Jeu de mots :
+
+    cui-cui
+    +
+    pair-to-pair / peer-to-peer
+
+
+Concept :
+
+    Alice ----------------🐦----------------> Bob
+
+
+Conversation privée entre deux utilisateurs.
+
+
+Différences avec une messagerie instantanée :
+
+- le message voyage ;
+- délai réel ;
+- pas de typing instantané obligatoire ;
+- pas de pression de réponse immédiate ;
+- possibilité de ne pas savoir qu'un message arrive.
+
+
+================================================================================
+22. RÉPONSES AUX MESSAGES
+================================================================================
+
+Pas de like classique.
+
+
+L'interaction principale est :
+
+    RÉPONDRE
+
+
+Une réponse utilise elle aussi un pigeon.
+
+
+Exemple :
+
+    Alice
+      |
+      | message
+      v
+     🐦
+      |
+      v
+     Bob
+
+Bob lit le message.
+
+Bob répond :
+
+     Bob
+      |
+      v
+     🐦
+      |
+      v
+    Alice
+
+
+Donc une conversation longue distance peut prendre beaucoup de temps.
+
+
+C'est volontaire.
+
+
+================================================================================
+23. ABSENCE DE LIKES
+================================================================================
+
+Pas de :
+
+    ❤️ 4,3K
+
+
+Objectifs :
+
+- réduire métriques de popularité ;
+- éviter compétition permanente ;
+- éviter interaction vide ;
+- favoriser réponses réelles ;
+- réduire mécanismes classiques d'optimisation de dopamine ;
+- garder l'univers centré sur l'échange.
+
+
+On pourra éventuellement avoir d'autres formes de réactions plus tard,
+mais aucune n'est indispensable au MVP.
+
+
+================================================================================
+24. REPOST / TRANSMISSION
+================================================================================
+
+Possibilité de transmettre un message reçu.
+
+
+Mais pas :
+
+    "repost immédiat vers mes 150 000 followers"
+
+
+À la place :
+
+TRANSMISSION PAR PIGEON.
+
+
+Exemple :
+
+    Alice
+      |
+      🐦
+      |
+     Bob
+     / \
+   🐦   🐦
+   /     \
+Emma     Lucas
+
+
+Le contenu se propage réellement à travers le graphe social.
+
+
+Résultat :
+
+Un message viral ne devient pas viral instantanément.
+
+
+Il voyage.
+
+
+================================================================================
+25. PROPAGATION D'UN MESSAGE
+================================================================================
+
+Exemple :
+
+    message original :
+    Paris
+    lundi 09:00
+
+
+    Bob reçoit :
+    Lyon
+    lundi 11:10
+
+
+    Bob transmet.
+
+
+    Emma reçoit :
+    Berlin
+    lundi 15:30
+
+
+    Emma transmet.
+
+
+    John reçoit :
+    New York
+    mardi 00:40
+
+
+Cela donne au réseau une véritable vitesse de propagation.
+
+
+Possibilité future :
+
+Afficher l'histoire du message :
+
+    Message créé :
+    Paris
+
+    distance parcourue :
+    18 420 km
+
+    transmissions :
+    37
+
+    villes traversées :
+    Paris
+    Lyon
+    Berlin
+    Londres
+    New York
+
+
+Attention :
+
+Ces statistiques ne doivent pas nécessairement devenir des métriques de
+popularité compétitives.
+
+Elles peuvent être présentées comme une histoire géographique.
+
+
+================================================================================
+26. COÛT DES TRANSMISSIONS
+================================================================================
+
+Un repost doit consommer de la capacité pigeon.
+
+
+Sinon :
+
+    un clic
+      |
+      v
+    partage massif
+      |
+      v
+    spam
+      |
+      v
+    retour à Twitter
+
+
+Donc transmettre signifie réellement :
+
+    choisir destination
+        |
+        v
+    assigner pigeon
+        |
+        v
+    pigeon indisponible pendant trajet
+
+
+================================================================================
+27. UN MESSAGE NE DOIT PAS ÊTRE MULTICASTÉ PARTOUT GRATUITEMENT
+================================================================================
+
+À éviter :
+
+    écrire message
+        |
+        +--> Home
+        +--> branche 1
+        +--> branche 2
+        +--> branche 3
+        +--> branche 4
+        +--> 12 cui-to-cui
+        +--> tous mes amis
+
+
+Une communication doit avoir une destination / coût clair.
+
+
+Le produit doit obliger l'utilisateur à faire des choix.
+
+
+QUESTION DE DESIGN À DÉFINIR :
+
+Un message public vers la Home des amis utilise-t-il :
+
+A. un seul pigeon logique qui "diffuse" ?
+
+B. plusieurs pigeons ?
+
+C. un coût spécial de diffusion ?
+
+
+Il faudra trouver un équilibre pour éviter :
+
+    "100 amis = impossible de publier"
+
+
+Solution potentielle :
+
+Le post public utilise UN pigeon de publication.
+
+Le réseau se charge ensuite de sa propagation vers le graphe social.
+
+Mais chaque repost ultérieur nécessite une nouvelle action/pigeon.
+
+
+Ainsi :
+
+    Alice publie sur sa Home
+            |
+            🐦
+            |
+        réseau social
+       /    |     \
+     Bob   Emma   Lucas
+
+
+Alice ne doit pas utiliser 300 pigeons si elle possède 300 amis.
+
+
+Cela permet à la Home de fonctionner tout en gardant la rareté sur les actions.
+
+
+================================================================================
+28. DISTINCTION ACTION / LIVRAISON
+================================================================================
+
+Important pour l'architecture produit :
+
+Les pigeons représentent probablement la capacité d'ACTIONS DE COMMUNICATION,
+pas littéralement un processus réseau par destinataire.
+
+
+Exemple :
+
+ACTION :
+
+    publier un message public
+
+
+Coût :
+
+    1 pigeon
+
+
+Backend :
+
+    le message pourra être livré à plusieurs amis selon les règles du réseau.
+
+
+Autres actions :
+
+    envoyer cui-to-cui       -> 1 pigeon
+    envoyer dans branche     -> 1 pigeon
+    répondre                 -> 1 pigeon
+    transmettre              -> 1 pigeon
+
+
+Cela évite que le système devienne inutilisable pour les utilisateurs ayant
+beaucoup d'amis.
+
+
+================================================================================
+29. NOTIFICATIONS
+================================================================================
+
+Il existe un onglet notifications.
+
+
+Mais philosophie différente des réseaux sociaux classiques.
+
+
+Pas de notifications :
+
+    "12 personnes ont aimé votre publication"
+
+    "Votre publication a obtenu 2 000 vues"
+
+    "Vous avez gagné 7 followers"
+
+
+Notifications pertinentes :
+
+    🐦 un cui-to-cui est arrivé
+
+    🐦 une réponse est arrivée
+
+    🌿 activité liée à une branche suivie
+
+    🐦 quelqu'un vous a envoyé/transmis quelque chose
+
+    👤 demande d'ami
+
+    🌿 invitation dans une branche
+
+
+================================================================================
+30. PAS DE VISIBILITÉ DES PIGEONS ENTRANTS
+================================================================================
+
+Principe important :
+
+L'utilisateur NE SAIT PAS nécessairement qu'un message est actuellement en route
+vers lui.
+
+
+Exemple à éviter :
+
+    "Alice vous répond"
+    "3 messages arrivent"
+    "Un pigeon sera là dans 17 minutes"
+
+
+À la place :
+
+    aucune information
+
+puis :
+
+    🐦 UN PIGEON VIENT D'ARRIVER
+
+
+Cela crée :
+
+- surprise ;
+- anticipation générale ;
+- absence de pression ;
+- moins de checking compulsif d'un timer.
+
+
+================================================================================
+31. VISIBILITÉ DES PIGEONS SORTANTS
+================================================================================
+
+Inversement, l'utilisateur peut connaître l'état de SES propres pigeons.
+
+
+Exemple :
+
+    MES PIGEONS
+
+    🐦 Maurice
+       destination : Londres
+       arrivée estimée : 14:42
+
+    🐦 Simone
+       destination : branche "Photo"
+       arrivée estimée : 16:10
+
+    🐦 Bernard
+       disponible
+
+
+Cela rend la contrainte compréhensible.
+
+
+================================================================================
+32. JOURNAL DES ARRIVÉES
+================================================================================
+
+L'onglet notifications peut être traité comme un journal.
+
+
+Exemple :
+
+    =================================================
+    ARRIVÉES
+    =================================================
+
+    10:42
+    🐦 Emma vous a envoyé un cui-to-cui
+
+
+    09:51
+    🌿 Une réponse est arrivée dans "Photographie"
+
+
+    08:17
+    🐦 Lucas a répondu à votre message
+
+
+Cela colle beaucoup mieux à l'univers qu'un centre de notifications classique.
+
+
+================================================================================
+33. ABSENCE DE COMPTES INFLUENCEURS
+================================================================================
+
+Le produit ne doit pas être construit autour de :
+
+    créateurs
+    audiences
+    abonnés
+    impressions
+    reach
+    engagement rate
+
+
+Cela ne signifie pas qu'une personne ne pourra jamais devenir connue.
+
+Mais le produit ne doit pas optimiser structurellement cette relation.
+
+
+Le graphe principal :
+
+    amis réciproques
+
+et :
+
+    communautés / branches
+
+
+plutôt que :
+
+    célébrité
+       |
+       v
+    12 millions de followers
+
+
+================================================================================
+34. RELATION ENTRE HOME ET BRANCHES
+================================================================================
+
+La Home :
+
+    réseau personnel
+
+
+Les branches :
+
+    réseau communautaire
+
+
+Le cui-to-cui :
+
+    réseau privé
+
+
+Structure globale :
+
+                         APPLICATION
+                              |
+              +---------------+---------------+
+              |               |               |
+              v               v               v
+            HOME          BRANCHES        CUI-TO-CUI
+              |               |               |
+        réseau amis     communautés       privé 1:1
+              |          géographiques
+              |
+        +-----+------+
+        |            |
+      amis         échos
+                  branches
+
+
+================================================================================
+35. PHILOSOPHIE DE DÉCOUVERTE
+================================================================================
+
+On veut remplacer :
+
+    "algorithme opaque qui décide ce qui maximise ton engagement"
+
+
+par des signaux compréhensibles.
+
+
+Exemples :
+
+    "3 de tes amis visitent cette branche"
+
+    "Cette branche est à 2 km"
+
+    "Beaucoup de pigeons arrivent ici"
+
+    "Cette branche vient d'être créée près de toi"
+
+    "Tu fréquentes plusieurs branches liées au cinéma"
+
+
+Les recommandations doivent pouvoir être comprises intuitivement.
+
+
+================================================================================
+36. PLACE DE LA GÉOGRAPHIE
+================================================================================
+
+La géographie doit être une donnée fondamentale.
+
+
+Pour chaque message :
+
+    origine
+    destination
+
+
+Pour chaque branche :
+
+    position immuable
+
+
+Pour chaque utilisateur :
+
+    position actuelle ou approximative
+
+
+Le réseau devient donc spatial.
+
+
+Structure conceptuelle :
+
+    UTILISATEURS
+         |
+         v
+    POSITIONS
+         |
+         v
+      OISEAUX
+         |
+         v
+     MESSAGES
+         |
+         v
+    DESTINATIONS
+         |
+         +--> utilisateurs
+         +--> branches
+
+
+================================================================================
+37. PROTECTION DE LA VIE PRIVÉE / LOCALISATION
+================================================================================
+
+IMPORTANT À TRAITER SÉRIEUSEMENT.
+
+Même si la géographie fait partie du concept, il ne faut probablement jamais
+exposer publiquement les coordonnées exactes d'un utilisateur.
+
+
+À envisager :
+
+- localisation approximative ;
+- arrondissement ;
+- ville ;
+- cellule géographique ;
+- résolution volontairement réduite ;
+- coordonnées exactes uniquement côté serveur.
+
+
+Exemple UI :
+
+    "Paris"
+
+pas :
+
+    latitude 48.xxxxx
+    longitude 2.xxxxx
+
+
+Pour une branche publique, la localisation peut être plus précise selon le type
+de branche.
+
+Mais attention aux branches créées à :
+
+- domicile ;
+- lieux sensibles ;
+- écoles ;
+- hôpitaux ;
+- refuges ;
+- etc.
+
+
+Il faudra prévoir des mécanismes de confidentialité.
+
+
+================================================================================
+38. MODÈLE CONCEPTUEL DES DONNÉES
+================================================================================
+
+ENTITÉ USER
+
+User {
+    id
+    username
+    display_name
+    avatar
+    created_at
+
+    current_location
+    location_updated_at
+
+    pigeon_capacity
+
+    profile_settings
+    privacy_settings
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ FRIENDSHIP
+
+Friendship {
+    id
+
+    user_a_id
+    user_b_id
+
+    status
+        pending
+        accepted
+        blocked
+
+    created_at
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ PIGEON
+
+Pigeon {
+    id
+    owner_user_id
+
+    name
+    species
+    cosmetic_skin
+
+    state
+        available
+        flying
+
+    current_delivery_id
+
+    created_at
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ BRANCH
+
+Branch {
+    id
+
+    name
+    description
+
+    creator_user_id
+
+    owner_user_id
+
+    latitude
+    longitude
+
+    created_at
+
+    visibility
+        public
+        private
+
+    state
+        active
+        archived
+        removed
+
+    category
+
+    member_count
+    activity_score
+
+    rules
+}
+
+
+IMPORTANT :
+
+latitude / longitude de la branche :
+
+    IMMUTABLES
+
+
+--------------------------------------------------------------------
+
+ENTITÉ BRANCH_MEMBERSHIP
+
+BranchMembership {
+    id
+
+    branch_id
+    user_id
+
+    role
+        visitor
+        member
+        moderator
+        owner
+
+    joined_at
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ MESSAGE
+
+Message {
+    id
+
+    author_id
+
+    content
+
+    message_type
+        public_home
+        branch
+        cui_to_cui
+        reply
+        forward
+
+    created_at
+
+    parent_message_id
+    original_message_id
+
+    branch_id
+    recipient_user_id
+
+    origin_latitude
+    origin_longitude
+
+    destination_latitude
+    destination_longitude
+
+    delivery_id
+
+    visibility_state
+        preparing
+        flying
+        delivered
+        removed
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ DELIVERY
+
+Delivery {
+    id
+
+    message_id
+    pigeon_id
+
+    sender_id
+
+    origin_latitude
+    origin_longitude
+
+    destination_latitude
+    destination_longitude
+
+    distance
+
+    departure_at
+    estimated_arrival_at
+    delivered_at
+
+    state
+        scheduled
+        flying
+        delivered
+        cancelled
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ NOTIFICATION
+
+Notification {
+    id
+
+    user_id
+
+    type
+
+    related_message_id
+    related_branch_id
+    related_user_id
+
+    created_at
+    read_at
+}
+
+
+--------------------------------------------------------------------
+
+ENTITÉ BRANCH_OWNERSHIP_HISTORY
+
+BranchOwnershipHistory {
+    id
+
+    branch_id
+
+    previous_owner_id
+    new_owner_id
+
+    transfer_type
+        manual
+        abandonment
+        moderation
+        automatic
+
+    created_at
+}
+
+
+================================================================================
+39. SÉPARER MESSAGE ET LIVRAISON
+================================================================================
+
+Architecture importante :
+
+MESSAGE != LIVRAISON
+
+
+Le message représente le contenu.
+
+La livraison représente son déplacement.
+
+
+Exemple :
+
+    Message
+      id = 42
+      author = Alice
+      text = "Bonjour"
+
+
+    Delivery
+      message = 42
+      Paris -> Londres
+      départ = 10:00
+      arrivée = 12:14
+
+
+Cette séparation facilitera énormément :
+
+- calcul des trajets ;
+- retries ;
+- notifications ;
+- historique ;
+- propagation ;
+- réponses ;
+- reposts ;
+- cache ;
+- modification future du système de pigeons.
+
+
+================================================================================
+40. ÉTAT D'UN MESSAGE
+================================================================================
+
+Cycle potentiel :
+
+    DRAFT
+      |
+      v
+    SENT
+      |
+      v
+    IN_FLIGHT
+      |
+      v
+    DELIVERED
+
+
+Le message n'est visible par sa destination que dans :
+
+    DELIVERED
+
+
+Cas d'erreur :
+
+    FAILED
+
+ou :
+
+    RETURNED
+
+potentiellement exploitable dans l'univers du produit.
+
+
+================================================================================
+41. CALCUL DU TEMPS DE VOYAGE
+================================================================================
+
+Conceptuellement :
+
+    origine
+      |
+      v
+    distance
+      |
+      v
+    vitesse / règles pigeon
+      |
+      v
+    délai
+      |
+      v
+    estimated_arrival_at
+
+
+Pseudo :
+
+    distance = distance_geo(origin, destination)
+
+    duration = travel_model(
+        distance,
+        pigeon_type,
+        game_rules
+    )
+
+    arrival = now + duration
+
+
+IMPORTANT :
+
+Ne pas nécessairement utiliser :
+
+    durée = distance / vitesse réelle exacte
+
+
+On peut appliquer :
+
+- minimum ;
+- maximum ;
+- courbe logarithmique ;
+- accélération sur longues distances ;
+- fuseaux horaires sans importance mécanique ;
+- espèces avec profils légèrement différents.
+
+
+================================================================================
+42. LE PIGEON NE DOIT PAS DEVENIR PAY-TO-WIN
+================================================================================
+
+Danger majeur :
+
+    gratuit :
+    3 pigeons
+
+    abonnement :
+    100 pigeons
+
+
+Résultat :
+
+    utilisateur premium = spam
+
+Cela détruirait la philosophie du produit.
+
+
+La monétisation devrait plutôt favoriser :
+
+- espèces ;
+- apparences ;
+- animations ;
+- noms ;
+- accessoires ;
+- pigeonniers ;
+- thèmes ;
+- personnalisation ;
+- éléments cosmétiques de branches.
+
+
+Si progression de capacité il y a :
+
+elle doit rester limitée.
+
+
+Exemple :
+
+    nouveau compte : 3
+    utilisateur établi : 5
+
+pas :
+
+    baleine premium : 500
+
+
+================================================================================
+43. OISEAUX / COLLECTION
+================================================================================
+
+Les pigeons peuvent devenir une dimension de personnalisation.
+
+Exemple :
+
+    🐦 pigeon biset
+    🕊️ pigeon blanc
+    🐦 pigeon voyageur
+    etc.
+
+
+Mais éviter que certaines espèces aient une vitesse tellement élevée qu'elles
+annulent complètement le principe du délai.
+
+
+Différences possibles principalement :
+
+- esthétique ;
+- animation ;
+- personnalité ;
+- historique ;
+- accessoires.
+
+
+Éventuellement petites différences fonctionnelles très encadrées.
+
+
+================================================================================
+44. PROFIL UTILISATEUR
+================================================================================
+
+Profil possible :
+
+    avatar
+    pseudo
+    bio
+
+    ville approximative
+
+    amis communs
+
+    branches fréquentées volontairement publiques
+
+    pigeons / collection
+
+
+Éviter :
+
+    followers
+    impressions
+    nombre de likes
+    reach
+    score d'influence
+
+
+================================================================================
+45. UX D'ENVOI
+================================================================================
+
+Exemple d'action :
+
+    [ écrire ]
+
+
+Utilisateur rédige :
+
+    "Quelqu'un a vu le film hier soir ?"
+
+
+Puis choisit destination :
+
+    Où envoyer votre pigeon ?
+
+    ○ Public / amis
+    ○ Branche
+    ○ Cui-to-cui
+
+
+Si branche :
+
+    rechercher branche
+
+
+Puis :
+
+    CHOISIR PIGEON
+
+    🐦 Maurice — disponible
+    🐦 Simone — disponible
+
+
+Puis :
+
+    Distance :
+    843 km
+
+    Arrivée estimée :
+    cet après-midi
+
+
+    [ ENVOYER ]
+
+
+================================================================================
+46. UX APRÈS ENVOI
+================================================================================
+
+Après clic :
+
+    Maurice est parti ! 🐦
+
+
+Puis écran :
+
+    Paris
+      |
+      |
+      |         🐦
+      |
+      |
+      v
+    Londres
+
+
+    arrivée estimée :
+    16:42
+
+
+Le contenu envoyé reste consultable par l'expéditeur.
+
+
+================================================================================
+47. UX DE RÉCEPTION
+================================================================================
+
+Avant arrivée :
+
+Aucune indication nécessaire.
+
+
+À l'arrivée :
+
+    notification système :
+
+    🐦 Un pigeon vient d'arriver.
+
+
+Dans application :
+
+    🐦 Maurice vient de se poser.
+
+
+Puis contenu.
+
+
+================================================================================
+48. BRANCHES ET OISEAUX EN APPROCHE
+================================================================================
+
+Contrairement aux messages personnels entrants, une branche peut éventuellement
+montrer son activité agrégée.
+
+
+Exemple :
+
+    🌿 PHOTOGRAPHIE PARIS
+
+    124 pigeons posés aujourd'hui
+
+    38 pigeons actuellement en route
+
+
+MAIS :
+
+Ne pas révéler :
+
+- auteurs ;
+- contenu ;
+- destinations individuelles ;
+- informations privées.
+
+
+Cela donne une sensation de vie.
+
+
+================================================================================
+49. UNE BRANCHE COMME "LIEU NUMÉRIQUE"
+================================================================================
+
+Philosophie importante :
+
+Une branche n'est pas juste un chat.
+
+Elle est un endroit.
+
+
+Exemple :
+
+    "Sommet du Mont Fuji"
+
+peut devenir une branche créée physiquement près du Fuji.
+
+
+Même des années plus tard, les utilisateurs peuvent continuer à envoyer des
+pigeons vers cet endroit.
+
+
+Cela crée une mémoire spatiale du réseau.
+
+
+================================================================================
+50. POSSIBILITÉS FUTURES LIÉES AUX LIEUX
+================================================================================
+
+Exemples :
+
+- branches créées pendant événements ;
+- festivals ;
+- universités ;
+- villes ;
+- monuments ;
+- quartiers ;
+- voyages ;
+- conférences ;
+- compétitions ;
+- souvenirs collectifs.
+
+
+Exemple :
+
+    🌿 "Erasmus Paris 2026"
+
+créée en 2026.
+
+La branche pourrait encore exister en 2032.
+
+
+================================================================================
+51. CARTE DU MONDE
+================================================================================
+
+Une vue carte pourrait devenir un élément très fort.
+
+
+Affichage :
+
+    branches
+    activité
+    zones recevant beaucoup de pigeons
+
+
+Pas nécessairement :
+
+    position précise des utilisateurs.
+
+
+Exemple :
+
+          🐦
+              🐦
+
+    Paris 🌿🌿🌿
+
+                      🐦
+
+                Berlin 🌿
+
+
+Cela pourrait rendre le réseau visuellement vivant.
+
+
+================================================================================
+52. RISQUE : TRANSFORMER LE PRODUIT EN TWITTER
+================================================================================
+
+À surveiller constamment.
+
+
+Si ajout de :
+
+- followers ;
+- likes ;
+- compteur de vues ;
+- retweets gratuits ;
+- trending ;
+- feed infini algorithmique ;
+- comptes certifiés influenceurs ;
+- boost payant ;
+- notifications d'engagement ;
+
+
+alors :
+
+    réseau original
+        |
+        v
+    Twitter avec des pigeons
+
+
+Chaque fonctionnalité devrait passer le test :
+
+"Est-ce que cette fonctionnalité respecte la physique sociale du produit ?"
+
+
+================================================================================
+53. TEST DE COHÉRENCE POUR UNE NOUVELLE FONCTIONNALITÉ
+================================================================================
+
+Avant d'ajouter une feature :
+
+1. Est-elle compatible avec la lenteur ?
+
+2. Utilise-t-elle le concept de destination ?
+
+3. Respecte-t-elle la rareté des pigeons ?
+
+4. Encourage-t-elle des échanges humains ou uniquement de l'engagement ?
+
+5. Transforme-t-elle les utilisateurs en audiences ?
+
+6. Crée-t-elle du spam ?
+
+7. Rend-elle le pigeon purement cosmétique ?
+
+8. Est-elle compréhensible sans algorithme opaque ?
+
+
+================================================================================
+54. PROBLÈME DU COLD START
+================================================================================
+
+Problème Roost / messagerie classique :
+
+    inscription
+      |
+      v
+    aucun ami
+      |
+      v
+    rien à faire
+      |
+      v
+    désinstallation
+
+
+Solution ici :
+
+    inscription
+       |
+       v
+    Home découverte
+       |
+       v
+    branches publiques
+       |
+       v
+    exploration
+       |
+       v
+    interactions
+       |
+       v
+    rencontres
+       |
+       v
+    amitiés
+       |
+       v
+    réseau personnel
+
+
+C'est une différence fondamentale.
+
+
+================================================================================
+55. ONBOARDING POSSIBLE
+================================================================================
+
+Étape 1 :
+
+    choisir pseudo
+
+
+Étape 2 :
+
+    autoriser localisation approximative
+
+
+Étape 3 :
+
+    sélectionner quelques centres d'intérêt
+
+
+Étape 4 :
+
+    montrer :
+
+    "Quelques branches près de chez vous"
+
+
+Étape 5 :
+
+    offrir premiers pigeons
+
+
+Étape 6 :
+
+    envoyer premier message vers une branche
+
+
+Pas besoin d'exiger immédiatement :
+
+    "invite 10 amis"
+
+
+================================================================================
+56. ANTI-SPAM NATUREL
+================================================================================
+
+Trois couches possibles :
+
+1. pigeons limités ;
+
+2. délai de livraison ;
+
+3. quota de création de branches.
+
+
+Cela rend le spam intrinsèquement plus difficile.
+
+
+À compléter par :
+
+- rate limiting backend ;
+- signalements ;
+- blocages ;
+- modération ;
+- anti-bot ;
+- règles de réputation.
+
+
+================================================================================
+57. BLOCAGE UTILISATEUR
+================================================================================
+
+Un utilisateur bloqué ne peut plus :
+
+- envoyer de cui-to-cui ;
+- demander en ami ;
+- répondre directement selon contexte ;
+- transmettre directement vers la personne.
+
+
+Le comportement dans une branche publique devra être défini :
+
+- masquer les messages ?
+- limiter interactions ?
+- empêcher mentions ?
+
+
+================================================================================
+58. MODÉRATION DES BRANCHES
+================================================================================
+
+Les branches publiques auront nécessairement besoin de modération.
+
+
+Fonctions minimales :
+
+- supprimer message ;
+- suspendre membre de la branche ;
+- bannir membre ;
+- nommer modérateur ;
+- signaler ;
+- verrouiller temporairement ;
+- définir règles.
+
+
+Important :
+
+La lenteur n'élimine pas :
+
+- harcèlement ;
+- spam ;
+- haine ;
+- contenu illégal ;
+- raids.
+
+
+================================================================================
+59. IDENTITÉ DU PRODUIT
+================================================================================
+
+Les mots utilisés doivent renforcer l'univers.
+
+
+Exemples :
+
+message privé :
+    cui-to-cui
+
+
+groupe :
+    branche
+
+
+communauté :
+    branche
+
+
+inbox :
+    arrivées
+    perchoir
+    pigeonnier
+    courrier
+
+
+publication :
+    message
+    billet
+    courrier
+
+
+retweet :
+    transmettre
+    relayer
+    renvoyer
+
+
+admin :
+    gardien
+
+
+DM :
+    cui-to-cui
+
+
+Cela pourra être affiné ultérieurement.
+
+
+================================================================================
+60. MÉCANIQUE SOCIALE PRINCIPALE
+================================================================================
+
+Le produit repose sur trois graphes simultanés.
+
+
+GRAPHE SOCIAL :
+
+    utilisateurs <--> amis
+
+
+GRAPHE COMMUNAUTAIRE :
+
+    utilisateurs <--> branches
+
+
+GRAPHE GÉOGRAPHIQUE :
+
+    utilisateurs / messages / branches <--> coordonnées
+
+
+Et sur un quatrième concept transversal :
+
+    TEMPS DE TRANSPORT
+
+
+================================================================================
+61. DIAGRAMME GLOBAL
+================================================================================
+
+                              USER
+                               |
+             +-----------------+-------------------+
+             |                 |                   |
+             v                 v                   v
+           HOME             BRANCHES           CUI-TO-CUI
+             |                 |                   |
+             |                 |                   |
+      +------+-----+        publiques            privé
+      |            |        privées              1:1
+      v            v           |
+    amis          échos        |
+      |            |           |
+      +------+-----+-----------+
+             |
+             v
+           MESSAGE
+             |
+             v
+           PIGEON
+             |
+             v
+          DELIVERY
+             |
+             v
+          DISTANCE
+             |
+             v
+           TEMPS
+             |
+             v
+          ARRIVÉE
+
+
+================================================================================
+62. BACKEND — MODÈLE DE LECTURE
+================================================================================
+
+Comme un réseau social classique à grande échelle :
+
+Le téléphone ne télécharge jamais toute la base.
+
+
+Exemple Home :
+
+    GET /home?cursor=XYZ&limit=20
+
+
+Backend :
+
+    amis
+      +
+    messages publics arrivés
+      +
+    quelques échos de branches
+      |
+      v
+    classement
+      |
+      v
+    20 éléments
+
+
+Puis pagination :
+
+    cursor suivant
+
+
+Même principe pour branches :
+
+    GET /branches/:id/messages?cursor=...&limit=20
+
+
+================================================================================
+63. MESSAGE NON LIVRÉ != MESSAGE VISIBLE
+================================================================================
+
+Dans la DB un message peut exister immédiatement.
+
+Mais l'API de lecture ne doit pas le retourner avant :
+
+    delivered_at <= now
+
+
+Donc :
+
+    DB
+    Message existe
+
+mais :
+
+    utilisateur destinataire
+    ne le voit pas
+
+
+jusqu'à livraison.
+
+
+================================================================================
+64. JOBS DE LIVRAISON
+================================================================================
+
+Architecture future possible :
+
+Lors d'un envoi :
+
+    API
+      |
+      v
+    crée Message
+      |
+      v
+    crée Delivery
+      |
+      v
+    programme arrival_at
+
+
+Un worker traite ensuite les livraisons.
+
+
+Pseudo :
+
+    if now >= delivery.arrival_at:
+        delivery.state = delivered
+        message.state = delivered
+        create_notification()
+
+
+À grande échelle :
+
+- queue ;
+- scheduler ;
+- workers ;
+- Redis ;
+- PostgreSQL / autre stockage ;
+- push notifications.
+
+
+================================================================================
+65. BASE DE DONNÉES MVP
+================================================================================
+
+Pour commencer :
+
+PAS BESOIN DE RECRÉER TWITTER.
+
+
+Un stack type :
+
+    PostgreSQL
+
+peut largement suffire pour :
+
+- users ;
+- friends ;
+- branches ;
+- messages ;
+- deliveries ;
+- memberships ;
+- notifications.
+
+
+Ajouter éventuellement :
+
+    Redis
+
+pour :
+
+- cache ;
+- queues ;
+- sessions ;
+- scheduled jobs ;
+- rate limiting.
+
+
+Ne pas optimiser pour 100 millions d'utilisateurs avant d'en avoir 100.
+
+
+================================================================================
+66. INDEX DB IMPORTANTS
+================================================================================
+
+Exemples :
+
+messages :
+
+    index(author_id, created_at)
+
+    index(branch_id, delivered_at)
+
+    index(recipient_user_id, delivered_at)
+
+
+friendships :
+
+    index(user_a_id)
+    index(user_b_id)
+
+
+memberships :
+
+    index(branch_id, user_id)
+    index(user_id)
+
+
+deliveries :
+
+    index(state, estimated_arrival_at)
+
+
+branches :
+
+    index(latitude, longitude)
+    ou extension géospatiale type PostGIS
+
+
+================================================================================
+67. POSTGIS POTENTIEL
+================================================================================
+
+Pour les branches et distances :
+
+PostgreSQL + PostGIS pourrait être particulièrement adapté.
+
+
+Permet :
+
+- distance ;
+- rayon ;
+- branches proches ;
+- recherche géographique ;
+- clustering ;
+- index spatial.
+
+
+Exemple conceptuel :
+
+    branches à moins de 10 km
+
+
+sans parcourir toutes les branches de la planète.
+
+
+================================================================================
+68. HOME — ARCHITECTURE POSSIBLE
+================================================================================
+
+Pour MVP :
+
+FAN-OUT ON READ suffisamment simple.
+
+
+Quand utilisateur ouvre Home :
+
+    récupérer amis
+        |
+        v
+    récupérer messages publics récents déjà arrivés
+        |
+        v
+    ajouter échos
+        |
+        v
+    trier / scorer
+        |
+        v
+    renvoyer page
+
+
+Plus tard si énorme scale :
+
+    timeline précalculée
+        +
+    recommandations / échos
+
+
+Pas besoin de résoudre ça immédiatement.
+
+
+================================================================================
+69. DONNÉE POTENTIELLE POUR HOME
+================================================================================
+
+HomeFeedItem {
+    id
+
+    user_id
+
+    source_type
+        friend
+        branch_echo
+
+    message_id
+
+    visible_at
+
+    score
+
+    created_at
+}
+
+
+Mais pour le MVP, même cette table n'est peut-être pas indispensable.
+
+
+================================================================================
+70. ÉCHOS DE BRANCHES — SCORE SIMPLE
+================================================================================
+
+Pas besoin d'IA au début.
+
+
+Exemple :
+
+score =
+    proximité
+    + activité
+    + amis présents
+    + récence
+    + centres d'intérêt
+
+
+Pseudo :
+
+    score =
+        distance_score * 0.25
+        + activity_score * 0.30
+        + friend_score * 0.25
+        + interest_score * 0.20
+
+
+Ou règles encore plus simples.
+
+
+L'objectif est :
+
+EXPLICABLE > PARFAITEMENT OPTIMISÉ.
+
+
+================================================================================
+71. PAS DE VISIBILITÉ DU CONTENU EN VOL
+================================================================================
+
+Règle globale :
+
+Le contenu d'un message en vol n'est visible que par son expéditeur.
+
+
+Exception éventuelle :
+
+l'expéditeur peut voir :
+
+    "pigeon vers branche X"
+
+
+Les autres voient éventuellement uniquement :
+
+    activité agrégée
+
+
+Jamais :
+
+    texte du message avant arrivée.
+
+
+================================================================================
+72. SUPPRESSION D'UN MESSAGE EN VOL
+================================================================================
+
+Question à résoudre.
+
+
+Possibilités :
+
+A.
+Impossible :
+    le pigeon est parti.
+
+
+Très cohérent avec l'univers.
+
+
+B.
+Possible uniquement pendant quelques secondes.
+
+
+C.
+Rappel possible via mécanique spéciale.
+
+
+Option A est conceptuellement forte :
+
+    "Une fois l'oiseau parti, impossible de le rappeler."
+
+
+Cela force à réfléchir avant l'envoi.
+
+
+À tester UX.
+
+
+================================================================================
+73. ÉDITION D'UN MESSAGE
+================================================================================
+
+Probablement :
+
+PAS D'ÉDITION APRÈS DÉPART.
+
+
+Pourquoi ?
+
+Le courrier est déjà parti.
+
+
+Cela renforce le concept.
+
+
+Avant départ :
+
+    brouillon modifiable
+
+
+Après départ :
+
+    contenu figé.
+
+
+================================================================================
+74. EFFET PSYCHOLOGIQUE RECHERCHÉ
+================================================================================
+
+Le produit doit provoquer :
+
+- anticipation ;
+- curiosité ;
+- intention ;
+- calme ;
+- surprise ;
+- sentiment de distance ;
+- sentiment de voyage ;
+- lien avec des lieux ;
+- plaisir de réception.
+
+
+Pas :
+
+- frénésie ;
+- scroll infini ;
+- rafraîchissement toutes les 2 secondes ;
+- obsession des likes ;
+- course aux followers.
+
+
+================================================================================
+75. SCÉNARIO COMPLET
+================================================================================
+
+Alice habite Paris.
+
+Elle ouvre l'app.
+
+
+HOME :
+
+Elle voit :
+
+    message de Bob arrivé il y a 20 min
+
+    message de Clara arrivé il y a 2 h
+
+    écho d'une branche "Photo de rue Paris"
+
+
+Alice ouvre la branche.
+
+
+BRANCHE :
+
+    située à Montmartre
+
+    89 pigeons aujourd'hui
+
+
+Alice écrit :
+
+    "Vous shootez avec quoi la nuit ?"
+
+
+Elle choisit :
+
+    🐦 Maurice
+
+
+Maurice part.
+
+
+Pendant ce temps :
+
+    pigeon indisponible
+
+
+Le message arrive dans la branche plus tard.
+
+
+Bob répond depuis Marseille.
+
+
+Sa réponse part vers la branche.
+
+
+Alice ne sait pas que Bob a répondu.
+
+
+Plus tard :
+
+    notification :
+
+    🐦 Une réponse est arrivée.
+
+
+Alice ouvre l'application.
+
+
+Conversation asynchrone accomplie.
+
+
+================================================================================
+76. AUTRE SCÉNARIO — CUI-TO-CUI
+================================================================================
+
+Alice :
+    Paris
+
+Emma :
+    Montréal
+
+
+Alice envoie :
+
+    "J'espère que ton entretien s'est bien passé."
+
+
+    Paris --------------------🐦--------------------> Montréal
+
+
+Alice voit le pigeon partir.
+
+
+Emma ne sait rien.
+
+
+Plusieurs heures plus tard :
+
+    🐦 Un pigeon vient d'arriver.
+
+
+Emma lit.
+
+
+Elle répond.
+
+
+Le retour prend également du temps.
+
+
+================================================================================
+77. SCÉNARIO — CRÉATION D'UNE BRANCHE
+================================================================================
+
+Lucas visite Londres.
+
+Il crée :
+
+    🌿 "Indie Games London"
+
+
+Coordonnées :
+
+    Londres
+
+
+Il retourne ensuite vivre à Lyon.
+
+
+La branche reste :
+
+    Londres
+
+
+Après 2 ans :
+
+    8 000 membres
+
+
+Lucas ne souhaite plus la gérer.
+
+
+Il choisit :
+
+    QUITTER LA GESTION
+
+
+Il sélectionne :
+
+    Emma
+
+Emma accepte.
+
+
+Résultat :
+
+    Emma devient gardienne
+
+    Lucas récupère un slot dans son quota
+
+    la branche reste à Londres
+
+    aucun contenu n'est perdu
+
+
+================================================================================
+78. SCÉNARIO — PROPAGATION
+================================================================================
+
+Alice publie :
+
+    "Regardez ce truc incroyable..."
+
+
+Bob reçoit.
+
+
+Bob transmet à Clara.
+
+
+Clara transmet vers une branche.
+
+
+Des membres transmettent ensuite à leurs amis.
+
+
+Le message se diffuse :
+
+    Paris
+      |
+     🐦
+      |
+    Lyon
+      |
+     🐦
+      |
+    Milan
+      |
+     🐦
+      |
+    Berlin
+
+
+Le réseau peut éventuellement afficher :
+
+    "Ce message a voyagé 4 300 km."
+
+
+================================================================================
+79. MÉTRIQUES PRODUIT INTÉRESSANTES
+================================================================================
+
+Éviter de centrer le produit sur :
+
+    likes
+    impressions
+    followers
+
+
+Métriques internes possibles :
+
+- pigeons envoyés ;
+- taux d'arrivée ;
+- réponses ;
+- temps avant réponse ;
+- nombre de branches actives ;
+- taux de branches mortes ;
+- % utilisateur avec au moins un ami ;
+- % utilisateur ayant rejoint une branche ;
+- nombre moyen de pigeons utilisés ;
+- rétention ;
+- découverte -> participation ;
+- utilisateur seul -> première interaction ;
+- transferts de messages ;
+- distances moyennes.
+
+
+================================================================================
+80. MVP POSSIBLE
+================================================================================
+
+Version 0 extrêmement réduite :
+
+1. compte utilisateur
+
+2. localisation approximative
+
+3. système d'amis
+
+4. pigeons limités
+
+5. Home publique amis
+
+6. branches publiques
+
+7. création de branche géolocalisée
+
+8. envoi dans branche
+
+9. cui-to-cui
+
+10. délais selon distance
+
+11. réponses
+
+12. notifications d'arrivée
+
+13. exploration simple des branches
+
+
+PAS nécessaire dans V0 :
+
+- collection énorme d'oiseaux ;
+- carte 3D ;
+- algorithme complexe ;
+- reposts sophistiqués ;
+- branche privée avancée ;
+- modération avancée communautaire ;
+- statistiques de voyage ;
+- dizaines de types d'oiseaux.
+
+
+================================================================================
+81. MVP — PRIORITÉ ABSOLUE
+================================================================================
+
+Il faut d'abord vérifier que ce loop est amusant :
+
+    ouvrir
+      |
+      v
+    voir quelque chose
+      |
+      v
+    envoyer pigeon
+      |
+      v
+    attendre
+      |
+      v
+    recevoir quelque chose
+      |
+      v
+    avoir envie de répondre
+
+
+Si ce loop ne fonctionne pas :
+
+le reste ne sauvera pas le produit.
+
+
+================================================================================
+82. BOUCLE SOCIALE PRINCIPALE
+================================================================================
+
+    DÉCOUVRIR
+       |
+       v
+    PARTICIPER
+       |
+       v
+    ENVOYER
+       |
+       v
+    ATTENDRE
+       |
+       v
+    RECEVOIR
+       |
+       v
+    RÉPONDRE
+       |
+       v
+    CRÉER LIEN
+       |
+       v
+    REVENIR
+
+
+================================================================================
+83. AVANTAGE PRINCIPAL FACE À UNE APP TYPE ROOST
+================================================================================
+
+Messagerie pure :
+
+    aucun ami
+      |
+      v
+    aucune utilité
+
+
+Ici :
+
+    aucun ami
+      |
+      v
+    branches publiques
+      |
+      v
+    découverte
+      |
+      v
+    interactions
+      |
+      v
+    rencontres
+      |
+      v
+    amis
+
+
+Le réseau peut donc produire son propre graphe social.
+
+
+================================================================================
+84. DIFFÉRENCIATION FONDAMENTALE
+================================================================================
+
+La différenciation n'est pas :
+
+    "nous avons aussi des pigeons"
+
+
+Elle est :
+
+1. branches géographiques persistantes ;
+
+2. communication publique possible entre inconnus ;
+
+3. Home construite autour des amis ;
+
+4. découverte par communautés ;
+
+5. propagation différée ;
+
+6. pigeons = ressource limitée ;
+
+7. pas de likes ;
+
+8. pas de followers ;
+
+9. pas de visibilité des messages entrants ;
+
+10. réseau spatial et temporel.
+
+
+================================================================================
+85. PHRASE DE POSITIONNEMENT
+================================================================================
+
+Version conceptuelle :
+
+"Un réseau social géographique asynchrone où les conversations vivent dans
+des lieux persistants et où chaque message doit voyager jusqu'à sa destination."
+
+
+Version plus courte :
+
+"Un réseau social où les messages voyagent vraiment."
+
+
+Autre :
+
+"Internet, à la vitesse d'un pigeon."
+
+
+À travailler plus tard.
+
+
+================================================================================
+86. PRINCIPES PRODUIT À NE PAS PERDRE
+================================================================================
+
+PRINCIPE 1
+----------
+
+Le pigeon doit avoir une conséquence mécanique.
+
+Jamais uniquement décorative.
+
+
+PRINCIPE 2
+----------
+
+Le réseau doit rester utilisable sans amis.
+
+
+PRINCIPE 3
+----------
+
+La lenteur doit produire du plaisir, pas uniquement de la frustration.
+
+
+PRINCIPE 4
+----------
+
+La géographie est fondamentale.
+
+
+PRINCIPE 5
+----------
+
+Une branche publique appartient progressivement à sa communauté.
+
+
+PRINCIPE 6
+----------
+
+La rareté des pigeons constitue la bande passante sociale de l'utilisateur.
+
+
+PRINCIPE 7
+----------
+
+Pas de métriques sociales omniprésentes.
+
+
+PRINCIPE 8
+----------
+
+La découverte doit être compréhensible.
+
+
+PRINCIPE 9
+----------
+
+Les messages entrants restent mystérieux jusqu'à leur arrivée.
+
+
+PRINCIPE 10
+-----------
+
+La communication doit rester intentionnelle.
+
+
+================================================================================
+87. QUESTIONS ENCORE OUVERTES
+================================================================================
+
+À déterminer plus tard :
+
+[ ] nombre initial de pigeons
+
+[ ] vitesse exacte des pigeons
+
+[ ] délai minimum local
+
+[ ] délai maximum international
+
+[ ] récupération exacte des pigeons
+
+[ ] nombre maximum de branches publiques créées
+
+[ ] branches privées comptent-elles dans le même quota ?
+
+[ ] conditions de suppression d'une branche vide
+
+[ ] procédure de transfert automatique
+
+[ ] détail des permissions modérateur
+
+[ ] peut-on consulter une branche sans la rejoindre ?
+
+[ ] rejoindre une branche est-il même nécessaire ?
+
+[ ] durée de conservation des messages
+
+[ ] messages modifiables avant départ ?
+
+[ ] possibilité d'annuler un pigeon
+
+[ ] politique de localisation
+
+[ ] précision de la position des branches
+
+[ ] possibilité de créer une branche n'importe où ou uniquement à sa position
+
+[ ] fonctionnement exact d'un post Home avec beaucoup d'amis
+
+[ ] coût d'un repost
+
+[ ] repost vers ami individuel ou Home complète
+
+[ ] réponse publique vs privée
+
+[ ] mentions utilisateur
+
+[ ] pièces jointes / photos
+
+[ ] vidéos
+
+[ ] liens
+
+[ ] taille maximale message
+
+[ ] contenu éphémère ou permanent
+
+[ ] recherche plein texte
+
+[ ] pseudo unique ou non
+
+[ ] politique de noms
+
+[ ] système de signalement
+
+[ ] anti-bot
+
+[ ] onboarding
+
+[ ] monétisation
+
+[ ] design visuel
+
+[ ] nom final du produit
+
+
+================================================================================
+88. ORDRE CONSEILLÉ POUR LA CONCEPTION
+================================================================================
+
+Étape 1 :
+
+Définir exactement les règles sociales.
+
+    - amis
+    - Home
+    - branches
+    - cui-to-cui
+    - réponses
+    - transmissions
+
+
+Étape 2 :
+
+Définir les règles du pigeon.
+
+    - capacité
+    - disponibilité
+    - durée
+    - arrivée
+
+
+Étape 3 :
+
+Définir le modèle des branches.
+
+    - géographie
+    - propriété
+    - transfert
+    - quota
+    - modération
+
+
+Étape 4 :
+
+Faire UX papier.
+
+
+Écrans :
+
+    onboarding
+    Home
+    écrire
+    pigeon en vol
+    branche
+    explorer
+    cui-to-cui
+    notifications
+    profil
+    pigeonnier
+
+
+Étape 5 :
+
+Construire MVP backend.
+
+
+Étape 6 :
+
+Tester le loop avec quelques dizaines de personnes.
+
+
+Étape 7 :
+
+Observer :
+
+    est-ce que l'attente crée de l'envie ?
+
+ou :
+
+    est-ce que tout le monde oublie l'application ?
+
+
+================================================================================
+89. POINT CRITIQUE À TESTER
+================================================================================
+
+La plus grande hypothèse produit est probablement :
+
+"Une communication volontairement différée est-elle suffisamment plaisante
+pour donner envie de revenir ?"
+
+
+La deuxième :
+
+"Les branches publiques compensent-elles suffisamment l'absence d'amis
+au démarrage ?"
+
+
+La troisième :
+
+"Le nombre limité de pigeons est-il perçu comme amusant ou frustrant ?"
+
+
+Il faudra tester ces trois choses avant de construire beaucoup plus.
+
+
+================================================================================
+90. CONCLUSION ACTUELLE
+================================================================================
+
+Le produit repose actuellement sur une combinaison cohérente :
+
+    MESSAGERIE ASYNCHRONE
+            +
+    RÉSEAU D'AMIS
+            +
+    COMMUNAUTÉS PUBLIQUES
+            +
+    GÉOGRAPHIE
+            +
+    DÉLAI DE TRANSPORT
+            +
+    CAPACITÉ LIMITÉE
+            +
+    DÉCOUVERTE
+            +
+    ABSENCE DE LIKES/FOLLOWERS
+
+
+La meilleure idée structurelle n'est probablement pas simplement :
+
+    "les messages sont transportés par des pigeons"
+
+
+mais :
+
+    "chaque utilisateur possède une quantité limitée de capacité de transport,
+    et tout le réseau est organisé autour de destinations géographiques."
+
+
+Les branches donnent au réseau une mémoire spatiale.
+
+Les amis donnent à la Home une dimension personnelle.
+
+Les échos de branches résolvent la découverte.
+
+Le cui-to-cui conserve la messagerie privée.
+
+Les réponses permettent les conversations.
+
+Les transmissions permettent la viralité sans instantanéité.
+
+Les quotas de branches évitent une prolifération incontrôlée.
+
+Le transfert de propriété permet aux communautés publiques de survivre
+à leur créateur.
+
+Les pigeons limités donnent un coût naturel à la communication.
+
+Ensemble, ces règles permettent potentiellement d'obtenir non pas
+"Twitter avec des pigeons" ou "Roost avec des groupes",
+
+mais un réseau social dont :
+
+    LE TEMPS
+    LA DISTANCE
+    LA DESTINATION
+    ET LA CAPACITÉ DE COMMUNICATION
+
+font directement partie du graphe social.
+================================================================================

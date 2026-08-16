@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blue Atmosphere — Courrier</title>
+<style>
+  :root {
+    --paper: #f6efe0;
+    --paper-2: #fdf9ee;
+    --ink: #3a2f22;
+    --ink-soft: #8a7a63;
+    --navy: #27436b;
+    --red: #b3402f;
+    --leaf: #5c7c50;
+    --line: #e0d3ba;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    background:
+      repeating-linear-gradient(45deg, transparent 0 34px, rgba(179,64,47,.05) 34px 38px),
+      var(--paper);
+    color: var(--ink); min-height: 100vh;
+  }
+
+  .layout {
+    display: grid; grid-template-columns: 250px 1fr 300px;
+    gap: 26px; max-width: 1200px; margin: 0 auto; padding: 26px;
+  }
+
+  /* ---------- nav ---------- */
+  .brand {
+    font-size: 24px; font-weight: 700; font-style: italic; padding: 8px 12px 2px;
+    letter-spacing: .5px;
+  }
+  .brand small { display: block; font-size: 11px; font-style: normal; letter-spacing: 3px; color: var(--ink-soft); text-transform: uppercase; }
+  .divider { border: none; border-top: 2px solid var(--ink); margin: 12px 12px 10px; position: relative; }
+  .divider::after { content: "✦"; position: absolute; top: -11px; left: 50%; transform: translateX(-50%); background: var(--paper); padding: 0 8px; font-size: 12px; color: var(--ink-soft); }
+
+  nav a {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px; margin: 2px 0;
+    color: var(--ink); text-decoration: none; font-size: 16.5px;
+    border-left: 3px solid transparent; transition: all .2s;
+  }
+  nav a:hover { border-left-color: var(--red); padding-left: 20px; }
+  nav a.active { border-left-color: var(--red); background: var(--paper-2); font-weight: 700; }
+  nav .badge {
+    margin-left: auto; font-family: "Segoe UI", sans-serif; font-size: 11px; font-weight: 700;
+    background: var(--red); color: var(--paper-2); padding: 1px 8px; border-radius: 99px;
+  }
+
+  .me {
+    margin-top: 26px; padding: 12px 14px; background: var(--paper-2);
+    border: 1px solid var(--line); box-shadow: 3px 3px 0 rgba(58,47,34,.08);
+    display: flex; gap: 10px; align-items: center;
+  }
+  .stamp-avatar {
+    width: 44px; height: 50px; background: var(--navy); color: var(--paper-2); flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700;
+    /* dentelure de timbre */
+    -webkit-mask: radial-gradient(circle 3px at 3px 3px, transparent 90%, #000) -3px -3px / 8px 8px;
+            mask: radial-gradient(circle 3px at 3px 3px, transparent 90%, #000) -3px -3px / 8px 8px;
+    transition: transform .3s;
+  }
+  .me:hover .stamp-avatar, .post:hover .stamp-avatar { transform: rotate(-5deg) scale(1.06); }
+  .me small { color: var(--ink-soft); font-size: 13px; display: block; }
+
+  /* ---------- compose = carte postale ---------- */
+  .compose {
+    background: var(--paper-2); border: 1px solid var(--line);
+    box-shadow: 4px 4px 0 rgba(58,47,34,.1); padding: 20px; position: relative;
+  }
+  .compose::before {
+    /* bord "par avion" */
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 8px;
+    background: repeating-linear-gradient(-45deg, var(--red) 0 12px, var(--paper-2) 12px 24px, var(--navy) 24px 36px, var(--paper-2) 36px 48px);
+  }
+  .compose h4 { font-style: italic; font-weight: 400; color: var(--ink-soft); font-size: 14px; margin: 8px 0 6px; letter-spacing: 1px; }
+  .compose textarea {
+    width: 100%; border: none; resize: none; outline: none; min-height: 64px;
+    font-family: inherit; font-size: 17px; color: var(--ink);
+    background: repeating-linear-gradient(transparent 0 27px, var(--line) 27px 28px);
+    line-height: 28px;
+  }
+  .compose-bar { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .dest {
+    font-family: inherit; background: transparent; border: 1px solid var(--ink-soft);
+    color: var(--ink-soft); padding: 5px 14px; border-radius: 3px; font-size: 13px;
+    cursor: pointer; transition: all .2s; font-style: italic;
+  }
+  .dest.selected, .dest:hover { border-color: var(--navy); color: var(--navy); background: rgba(39,67,107,.06); font-weight: 700; }
+  .send {
+    margin-left: auto; font-family: inherit; font-size: 15px; font-weight: 700;
+    background: var(--red); color: var(--paper-2); border: none; padding: 9px 22px;
+    box-shadow: 3px 3px 0 rgba(58,47,34,.25); cursor: pointer; transition: all .15s;
+    letter-spacing: 1px;
+  }
+  .send:hover { transform: translate(-1px,-1px); box-shadow: 4px 4px 0 rgba(58,47,34,.3); }
+  .send:active { transform: translate(2px,2px); box-shadow: 1px 1px 0 rgba(58,47,34,.3); }
+  .send:disabled { background: #c9b8a5; cursor: not-allowed; transform: none; }
+  .count { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+
+  /* ---------- posts = lettres ---------- */
+  .post {
+    background: var(--paper-2); border: 1px solid var(--line); padding: 20px; margin-top: 18px;
+    box-shadow: 4px 4px 0 rgba(58,47,34,.1); position: relative;
+    animation: slide .55s ease backwards;
+  }
+  .post:nth-of-type(2){animation-delay:.1s} .post:nth-of-type(3){animation-delay:.2s} .post:nth-of-type(4){animation-delay:.3s}
+  @keyframes slide { from { opacity: 0; transform: translateX(-24px) rotate(-.6deg); } }
+  .post .postmark {
+    position: absolute; top: 12px; right: 14px; text-align: center;
+    font-family: "Courier New", monospace; font-size: 10px; color: var(--ink-soft);
+    border: 2px solid var(--ink-soft); border-radius: 50%; width: 74px; height: 74px;
+    display: flex; flex-direction: column; justify-content: center;
+    opacity: .55; transform: rotate(8deg); line-height: 1.3;
+  }
+  .post-head { display: flex; align-items: center; gap: 12px; padding-right: 90px; }
+  .post-head b { font-size: 17px; }
+  .post-head .who small { color: var(--ink-soft); font-size: 13px; display: block; font-style: italic; }
+  .post p.text { margin: 14px 0 10px; font-size: 16.5px; line-height: 1.65; }
+  .post p.text::first-letter { font-size: 150%; font-weight: 700; color: var(--navy); }
+  .travel-line {
+    font-family: "Courier New", monospace; font-size: 11.5px; color: var(--ink-soft);
+    border-top: 1px dashed var(--line); padding-top: 9px; margin-top: 4px;
+    display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+  }
+  .actions { display: flex; gap: 14px; }
+  .actions button {
+    font-family: inherit; border: none; background: transparent; color: var(--navy);
+    font-size: 13.5px; font-style: italic; cursor: pointer; padding: 2px 0;
+    border-bottom: 1px solid transparent; transition: border-color .2s;
+  }
+  .actions button:hover { border-bottom-color: var(--navy); }
+
+  .echo { border: 2px solid var(--leaf); }
+  .echo .tag { color: var(--leaf); font-size: 11px; letter-spacing: 2.5px; font-weight: 700; font-family: "Segoe UI", sans-serif; }
+  .echo .visit {
+    font-family: inherit; background: var(--leaf); color: var(--paper-2); border: none;
+    padding: 7px 18px; cursor: pointer; font-size: 13.5px; font-weight: 700;
+    box-shadow: 3px 3px 0 rgba(58,47,34,.2); transition: all .15s;
+  }
+  .echo .visit:hover { transform: translate(-1px,-1px); }
+
+  /* ---------- pigeonnier ---------- */
+  .panel {
+    background: var(--paper-2); border: 1px solid var(--line); padding: 18px;
+    box-shadow: 4px 4px 0 rgba(58,47,34,.1); margin-bottom: 18px;
+  }
+  .panel h3 { font-size: 13px; letter-spacing: 2.5px; text-transform: uppercase; color: var(--navy); border-bottom: 2px solid var(--navy); padding-bottom: 7px; margin-bottom: 8px; }
+  .capacity { font-size: 13.5px; color: var(--ink-soft); font-style: italic; margin-bottom: 8px; }
+  .pigeon { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px dotted var(--line); }
+  .pigeon:first-of-type { border-top: none; }
+  .pigeon .emoji { font-size: 21px; }
+  .pigeon.flying .emoji { animation: sway 2s ease-in-out infinite; display: inline-block; }
+  @keyframes sway { 0%,100% { transform: rotate(-8deg); } 50% { transform: rotate(8deg); } }
+  .pigeon b { font-size: 14.5px; display: block; }
+  .pigeon small { font-size: 12px; color: var(--ink-soft); font-style: italic; }
+  .state {
+    margin-left: auto; font-family: "Courier New", monospace; font-size: 10px; font-weight: 700;
+    padding: 3px 8px; border: 1.5px solid; letter-spacing: 1px; transform: rotate(-2deg);
+  }
+  .state.free { color: var(--leaf); border-color: var(--leaf); }
+  .state.busy { color: var(--red); border-color: var(--red); }
+
+  /* ---------- toast = télégramme ---------- */
+  .toast {
+    position: fixed; bottom: 26px; right: 26px; z-index: 50; max-width: 300px;
+    background: var(--paper-2); border: 1px solid var(--ink); padding: 16px 18px;
+    font-family: "Courier New", monospace; font-size: 13px; color: var(--ink);
+    box-shadow: 6px 6px 0 rgba(58,47,34,.25);
+    transform: translateY(140px) rotate(2deg); opacity: 0;
+    transition: transform .5s cubic-bezier(.2,1.3,.4,1), opacity .4s;
+  }
+  .toast.show { transform: translateY(0) rotate(-1deg); opacity: 1; }
+  .toast .head { font-weight: 700; letter-spacing: 2px; border-bottom: 1px solid var(--ink); padding-bottom: 5px; margin-bottom: 7px; }
+
+  .fly-away {
+    position: fixed; z-index: 100; font-size: 34px; pointer-events: none;
+    animation: flyaway 2s ease-in forwards;
+  }
+  @keyframes flyaway {
+    0% { transform: translate(0,0) rotate(0); opacity: 1; }
+    30% { transform: translate(10vw,-8vh) rotate(-10deg); }
+    100% { transform: translate(58vw,-58vh) rotate(-22deg) scale(.35); opacity: 0; }
+  }
+
+  @media (max-width: 980px) { .layout { grid-template-columns: 1fr; } aside, .leftcol { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- ============ NAV ============ -->
+  <div class="leftcol">
+    <div class="brand">Blue Atmosphere<small>service aérien postal</small></div>
+    <hr class="divider">
+    <nav>
+      <a href="#" class="active">🏠 Home</a>
+      <a href="#">🧭 Explorer</a>
+      <a href="#">🌿 Mes branches</a>
+      <a href="#">✉️ Cui-to-cui <span class="badge">2</span></a>
+      <a href="#">📯 Arrivées</a>
+      <a href="#">🕊️ Pigeonnier</a>
+      <a href="#">👤 Profil</a>
+    </nav>
+    <div class="me">
+      <div class="stamp-avatar">U</div>
+      <div><b>user</b><small>@user — Paris, France</small></div>
+    </div>
+  </div>
+
+  <!-- ============ FEED ============ -->
+  <main>
+    <div class="compose">
+      <h4>— Rédiger un pli —</h4>
+      <textarea id="txt" placeholder="Cher réseau…" maxlength="280"></textarea>
+      <div class="compose-bar">
+        <button class="dest selected">Public / amis</button>
+        <button class="dest">Vers une branche</button>
+        <button class="dest">Cui-to-cui</button>
+        <span class="count"><span id="chars">0</span>/280</span>
+        <button class="send" id="sendBtn" disabled>EXPÉDIER ✉️</button>
+      </div>
+    </div>
+
+    <article class="post">
+      <div class="postmark">PAR PIGEON<br>★<br>LYON<br>391 KM</div>
+      <div class="post-head">
+        <div class="stamp-avatar" style="background:#a05a2c;">A</div>
+        <div class="who"><b>Alice</b><small>@alice — Lyon</small></div>
+      </div>
+      <p class="text">Quelqu'un a vu le film hier soir au ciné-club ? Je n'arrête pas d'y penser…</p>
+      <div class="travel-line">
+        <span>🐦 livré il y a 20 min — vol de 8 h 40</span>
+        <span class="actions"><button>Répondre ↩</button><button>Transmettre ⤳</button></span>
+      </div>
+    </article>
+
+    <article class="post">
+      <div class="postmark">PAR PIGEON<br>★<br>BRUXELLES<br>264 KM</div>
+      <div class="post-head">
+        <div class="stamp-avatar" style="background:#5a3c78;">M</div>
+        <div class="who"><b>Marc</b><small>@marc — Bruxelles</small></div>
+      </div>
+      <p class="text">Je viens de rentrer du Japon. J'ai laissé une branche là-bas, près du Fuji — envoyez-y un pigeon un jour, il mettra du temps mais ça vaut le coup.</p>
+      <div class="travel-line">
+        <span>🐦 livré il y a 2 h — vol de 6 h 05</span>
+        <span class="actions"><button>Répondre ↩</button><button>Transmettre ⤳</button></span>
+      </div>
+    </article>
+
+    <article class="post echo">
+      <div class="post-head" style="padding-right:0;">
+        <div class="stamp-avatar" style="background:var(--leaf);">🌿</div>
+        <div class="who">
+          <span class="tag">ÉCHO D'UNE BRANCHE — À 4,1 KM</span>
+          <b style="display:block; font-size:18px;">Photo de rue Paris</b>
+        </div>
+      </div>
+      <p class="text">« Vous shootez avec quoi la nuit ? Le grain de la pellicule me manque… »</p>
+      <div class="travel-line">
+        <span>🐦 89 pigeons posés aujourd'hui · 3 de vos amis y passent</span>
+        <button class="visit">Visiter →</button>
+      </div>
+    </article>
+
+    <article class="post">
+      <div class="postmark">PAR PIGEON<br>★<br>TOKYO<br>9 726 KM</div>
+      <div class="post-head">
+        <div class="stamp-avatar" style="background:#8c3048;">E</div>
+        <div class="who"><b>Emma</b><small>@emma — Tokyo</small></div>
+      </div>
+      <p class="text">Ce message a quitté Tokyo il y a un mois. Si tu le lis, c'est que Maurice a survécu au Pacifique. Raconte-moi Paris.</p>
+      <div class="travel-line">
+        <span>🐦 livré cette nuit — vol de 29 jours</span>
+        <span class="actions"><button>Répondre ↩</button><button>Transmettre ⤳</button></span>
+      </div>
+    </article>
+  </main>
+
+  <!-- ============ PIGEONNIER ============ -->
+  <aside>
+    <div class="panel">
+      <h3>Registre du pigeonnier</h3>
+      <p class="capacity"><b id="avail">2</b> pigeons disponibles sur 5</p>
+      <div class="pigeon"><span class="emoji">🐦</span><div><b>Simone</b><small>au perchoir</small></div><span class="state free">PRÊTE</span></div>
+      <div class="pigeon"><span class="emoji">🐦</span><div><b>Bernard</b><small>au perchoir</small></div><span class="state free">PRÊT</span></div>
+      <div class="pigeon flying"><span class="emoji">🐦</span><div><b>Maurice</b><small>→ Londres, arr. <span id="eta1">16 h 42</span></small></div><span class="state busy">EN VOL</span></div>
+      <div class="pigeon flying"><span class="emoji">🐦</span><div><b>Auguste</b><small>→ branche « Photo », 38 min</small></div><span class="state busy">EN VOL</span></div>
+      <div class="pigeon flying"><span class="emoji">🐦</span><div><b>Gaston</b><small>→ Tokyo, 26 jours restants</small></div><span class="state busy">EN VOL</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>Branches voisines</h3>
+      <div class="pigeon"><span class="emoji">🌿</span><div><b>Étudiants Paris</b><small>2,3 km — très active</small></div></div>
+      <div class="pigeon"><span class="emoji">🌿</span><div><b>Cinéma indépendant</b><small>6,7 km — 41 pigeons ce jour</small></div></div>
+      <div class="pigeon"><span class="emoji">🌿</span><div><b>Insomniaques de Soho</b><small>Londres — forte activité</small></div></div>
+    </div>
+  </aside>
+</div>
+
+<div class="toast" id="toast">
+  <div class="head">✦ TÉLÉGRAMME ✦</div>
+  UN PIGEON VIENT D'ARRIVER — STOP —<br>LUCAS A RÉPONDU À VOTRE PLI — STOP —
+</div>
+
+<script>
+  const txt = document.getElementById('txt');
+  const send = document.getElementById('sendBtn');
+  txt.addEventListener('input', () => {
+    document.getElementById('chars').textContent = txt.value.length;
+    send.disabled = txt.value.trim().length === 0;
+  });
+
+  document.querySelectorAll('.dest').forEach(b =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('.dest').forEach(x => x.classList.remove('selected'));
+      b.classList.add('selected');
+    }));
+
+  send.addEventListener('click', () => {
+    const bird = document.createElement('span');
+    bird.className = 'fly-away'; bird.textContent = '🕊️';
+    const r = send.getBoundingClientRect();
+    bird.style.left = r.left + 'px'; bird.style.top = r.top + 'px';
+    document.body.appendChild(bird);
+    setTimeout(() => bird.remove(), 2100);
+    txt.value = ''; document.getElementById('chars').textContent = 0; send.disabled = true;
+    const avail = document.getElementById('avail');
+    avail.textContent = Math.max(0, +avail.textContent - 1);
+  });
+
+  // horloge d'arrivée de Maurice (heure qui approche en accéléré)
+  let mins = 16 * 60 + 42;
+  setInterval(() => {
+    mins -= 1;
+    document.getElementById('eta1').textContent =
+      Math.floor(mins/60) + ' h ' + String(mins%60).padStart(2,'0');
+  }, 5000);
+
+  setTimeout(() => document.getElementById('toast').classList.add('show'), 6500);
+  setTimeout(() => document.getElementById('toast').classList.remove('show'), 14000);
+</script>
+</body>
+</html>

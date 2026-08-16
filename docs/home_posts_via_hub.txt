@@ -1,0 +1,188 @@
+================================================================================
+BLUE ATMOSPHERE — POSTS HOME VIA HUB
+================================================================================
+
+STATUT
+------
+
+Règle produit validée pour les publications sur la Home.
+
+Une publication Home est une diffusion à plusieurs amis. Elle ne doit pas être
+modélisée comme un unique pigeon visitant physiquement chaque destinataire.
+
+
+================================================================================
+1. PÉRIMÈTRE
+================================================================================
+
+Cette règle s'applique UNIQUEMENT aux posts Home.
+
+Elle ne s'applique pas à :
+
+- un cui-to-cui ;
+- une réponse adressée à un utilisateur ;
+- un message envoyé à une branche.
+
+Ces communications restent directes :
+
+    expéditeur -> destinataire
+
+
+================================================================================
+2. PRINCIPE COMMUN
+================================================================================
+
+Pour publier sur sa Home, l'utilisateur envoie d'abord son message vers le hub
+le plus proche de sa position au moment de l'envoi.
+
+    utilisateur -> hub le plus proche -> N amis
+
+Le hub sélectionné est toujours le hub géographiquement le plus proche.
+
+Un hub qui est également une gateway peut être sélectionné s'il est le plus
+proche, mais sa fonction de gateway n'intervient pas dans une diffusion Home.
+
+Il n'est jamais question d'envoyer systématiquement un post Home vers la
+gateway la plus proche : les gateways sont réservées à la logique interrégionale
+du système postal.
+
+
+================================================================================
+3. CAS PIGEON
+================================================================================
+
+Trajet :
+
+    utilisateur
+        |
+        | pigeon direct, selon les règles de vitesse pigeon
+        v
+    hub le plus proche
+        |
+        | relais immédiat, sans traitement ni attente
+        v
+    N livraisons individuelles vers les amis
+
+
+3.1 Premier trajet
+-------------------
+
+Le pigeon personnel de l'utilisateur porte le message jusqu'au hub le plus
+proche. La durée est calculée avec la distance utilisateur -> hub et les règles
+habituelles du pigeon : vitesse déterministe, entre 40 et 60 km/h.
+
+
+3.2 Arrivée au hub
+------------------
+
+Le hub est seulement un point de relais pour le pigeon :
+
+- pas de centre de tri ;
+- pas d'horaires d'ouverture ;
+- pas de fermeture le dimanche ou les jours fériés ;
+- pas de traitement ;
+- pas de routage par région ou par gateway.
+
+Dès l'arrivée au hub :
+
+- le pigeon personnel redevient disponible ;
+- une livraison est créée pour chaque ami éligible ;
+- chaque livraison part immédiatement depuis les coordonnées du hub.
+
+
+3.3 Livraisons aux amis
+------------------------
+
+Chaque ami possède sa propre livraison :
+
+    hub -> ami A
+    hub -> ami B
+    hub -> ami C
+
+La distance et l'heure d'arrivée sont calculées individuellement. Les amis ne
+reçoivent donc pas le post simultanément. Le message devient visible pour un
+ami uniquement lorsque sa propre livraison est arrivée.
+
+
+================================================================================
+4. CAS LETTRE / POSTE
+================================================================================
+
+Trajet :
+
+    utilisateur
+        |
+        | dépôt postal vers le hub le plus proche
+        v
+    hub le plus proche
+        |
+        | traitement postal puis duplication
+        v
+    N envois postaux individuels vers les amis
+
+
+4.1 Premier trajet
+-------------------
+
+L'utilisateur dépose la lettre à destination de son hub le plus proche. La
+durée de ce premier trajet suit les règles de collecte postale déjà définies.
+
+
+4.2 Arrivée au hub
+------------------
+
+Lorsque la lettre atteint le hub :
+
+- la lettre / le slot postal personnel est rendu à l'utilisateur ;
+- le hub traite le message comme un envoi postal normal ;
+- le contenu est démultiplié en une lettre par ami éligible.
+
+À partir de ce point, chaque copie suit indépendamment l'algorithme postal
+complet : traitement du hub, horaires, week-ends, jours fériés, transports
+entre hubs, gateways si nécessaires, puis distribution finale.
+
+
+4.3 Livraisons aux amis
+------------------------
+
+Chaque ami possède une lettre et une timeline distinctes. Deux amis peuvent
+donc recevoir la même publication à des moments très différents selon leur
+position, leurs hubs et les contraintes postales locales.
+
+
+================================================================================
+5. CONSÉQUENCES TECHNIQUES
+================================================================================
+
+Une publication Home correspond à :
+
+    1 message logique
+    1 action d'envoi de l'auteur
+    1 trajet initial auteur -> hub
+    N livraisons individuelles après le hub
+
+Pour chaque livraison individuelle, enregistrer au minimum :
+
+- message_id ;
+- recipient_user_id ;
+- hub d'origine ;
+- méthode (PIGEON ou POSTE) ;
+- dispatched_at ;
+- delivered_at ;
+- données de trajet propres au mode choisi.
+
+Le feed Home ne doit afficher que les messages dont la livraison associée au
+lecteur est arrivée.
+
+
+================================================================================
+6. INTENTION PRODUIT
+================================================================================
+
+Le pigeon ou la lettre de l'utilisateur représente son effort de publication.
+Le hub rend ensuite la diffusion géographiquement crédible, sans faire payer à
+l'auteur un pigeon ou une lettre par ami, ni bloquer son slot jusqu'à l'arrivée
+chez l'ami le plus éloigné.
+
+La Home est ainsi une infrastructure de diffusion. Les cui-to-cui et les
+branches restent des communications directes et personnelles.

@@ -1,0 +1,48 @@
+@import "tailwindcss";
+
+/* dark piloté par la classe .dark sur <html>, pas par l'OS */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* la vue "desktop" (3 colonnes) ne s'active qu'à partir de 1100px ;
+     en dessous : vue téléphone (tab bar + header) */
+  --breakpoint-lg: 1100px;
+
+  /* Light — "Ciel clair" validé */
+  --color-sky-soft: #e8f6ff;
+  --color-sky-strong: #bfe3ff;
+
+  /* Dark — noir profond (pas de bleu marine) */
+  --color-night-0: #060607; /* fond */
+  --color-night-1: #0e0e10; /* panneaux */
+  --color-night-2: #151518; /* cartes */
+  --color-night-line: #232328; /* bordures */
+
+  --color-accent: #2a9df4;
+  --color-accent-soft: #5eb8ff;
+}
+
+@layer base {
+  /* Mobile : pas de délai double-tap ni de surbrillance grise au toucher */
+  button, a, input, textarea, select {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Garde-fou anti-zoom iOS : jamais de champ sous 16px.
+     Dans @layer base pour que les utilitaires (text-[17px]…) gardent la main. */
+  input, textarea, select {
+    font-size: 1rem;
+  }
+}
+
+/* pigeon qui traverse l'écran (auth, gauche) */
+@keyframes cross {
+  from { transform: translateX(-60px); }
+  to { transform: translateX(105vw) translateY(-4vh); }
+}
+
+/* envol à l'envoi d'un message */
+@keyframes flyaway {
+  to { transform: translate(45vw, -50vh) rotate(-18deg) scale(0.4); opacity: 0; }
+}

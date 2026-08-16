@@ -1,0 +1,19 @@
+# Dépendances
+node_modules/
+
+# Builds
+client/dist/
+server/dist/
+
+# Base de données locale (recréable via npm run db:migrate)
+server/data/*.db
+server/data/*.db-shm
+server/data/*.db-wal
+
+# Divers
+.env
+.DS_Store
+*.log
+
+# Certificats HTTPS générés pour le développement local
+client/.cert/

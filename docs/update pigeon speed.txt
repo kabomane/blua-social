@@ -1,0 +1,604 @@
+================================================================================
+UPDATE — CALCUL DE LA VITESSE DE VOL DES PIGEONS
+================================================================================
+
+
+OBJECTIF
+================================================================================
+
+La vitesse d'un pigeon ne doit pas être parfaitement fixe.
+
+Contrairement au système postal, dont les variations de délai proviennent
+principalement de la logistique :
+
+- hubs ;
+- gateways ;
+- horaires ;
+- week-ends ;
+- traitements ;
+- transports ;
+
+le pigeon possède une légère incertitude naturelle liée à sa vitesse de vol.
+
+Cette variation doit :
+
+- être calculée une seule fois au moment de l'envoi ;
+- rester déterministe ;
+- favoriser les vitesses proches de la moyenne ;
+- permettre occasionnellement des pigeons particulièrement rapides ou lents ;
+- ne jamais changer après l'envoi.
+
+
+================================================================================
+1. NOUVELLE PLAGE DE VITESSE
+================================================================================
+
+Ancien système :
+
+    vitesse moyenne :
+        45 km/h
+
+    variation :
+        ± 8 %
+
+    plage :
+        41.4 km/h → 48.6 km/h
+
+
+Nouveau système :
+
+    VITESSE MINIMUM :
+        40 km/h
+
+    VITESSE CIBLE / MOYENNE :
+        50 km/h
+
+    VITESSE MAXIMUM :
+        60 km/h
+
+
+Représentation conceptuelle :
+
+    40          45          50          55          60
+     |-----------|-----------|-----------|-----------|
+     rare                  fréquent                  rare
+
+
+La majorité des trajets doivent produire une vitesse relativement proche de :
+
+    50 km/h
+
+
+Les valeurs proches de :
+
+    40 km/h
+
+ou :
+
+    60 km/h
+
+doivent être possibles mais beaucoup plus rares.
+
+
+================================================================================
+2. NE PAS UTILISER UN RANDOM UNIFORME SIMPLE
+================================================================================
+
+À ÉVITER :
+
+    speed = randomBetween(40, 60)
+
+
+Avec un random uniforme :
+
+    41 km/h
+    50 km/h
+    59 km/h
+
+ont approximativement la même probabilité.
+
+
+Ce n'est pas le comportement recherché.
+
+
+On souhaite plutôt :
+
+    vitesses centrales   → fréquentes
+
+    vitesses extrêmes    → rares
+
+
+================================================================================
+3. DISTRIBUTION TRIANGULAIRE SIMPLE
+================================================================================
+
+Pour obtenir ce comportement, effectuer DEUX tirages pseudo-aléatoires
+déterministes.
+
+Chaque tirage retourne une valeur comprise entre :
+
+    0
+    et
+    1
+
+
+Puis calculer leur moyenne :
+
+    normalized =
+        (random1 + random2)
+        / 2
+
+
+Enfin :
+
+    speed =
+        40
+        +
+        normalized * 20
+
+
+Cela produit une distribution centrée naturellement autour de :
+
+    50 km/h
+
+
+Exemple de distribution conceptuelle :
+
+                      /\
+                    /    \
+                  /        \
+                /            \
+              /                \
+    40       45       50       55       60
+
+
+Les valeurs proches de 50 km/h sont les plus fréquentes.
+
+Plus on se rapproche de 40 ou 60 km/h,
+plus le résultat devient rare.
+
+
+================================================================================
+4. RANDOM DÉTERMINISTE
+================================================================================
+
+IMPORTANT :
+
+Il ne faut PAS utiliser Math.random() directement.
+
+
+La vitesse doit être déterminée à partir du messageId.
+
+
+Exemple :
+
+    messageId :
+
+        MSG_A7291
+
+
+Créer deux seeds indépendantes :
+
+    MSG_A7291:speed:1
+
+    MSG_A7291:speed:2
+
+
+Puis :
+
+    random1 =
+        seededRandom("MSG_A7291:speed:1")
+
+    random2 =
+        seededRandom("MSG_A7291:speed:2")
+
+
+Ainsi :
+
+    MSG_A7291
+
+produira toujours exactement la même vitesse.
+
+
+Un refresh ne doit jamais modifier :
+
+- la vitesse ;
+- la durée du trajet ;
+- l'heure estimée d'arrivée.
+
+
+================================================================================
+5. PSEUDOCODE
+================================================================================
+
+random1 =
+    seededRandom(
+        messageId + ":speed:1"
+    )
+
+
+random2 =
+    seededRandom(
+        messageId + ":speed:2"
+    )
+
+
+normalized =
+    (random1 + random2)
+    / 2
+
+
+effectiveSpeedKmH =
+    40
+    +
+    normalized * 20
+
+
+================================================================================
+6. EXEMPLE JAVASCRIPT / TYPESCRIPT
+================================================================================
+
+function calculateBirdSpeed(messageId) {
+
+    const MIN_SPEED = 40;
+    const MAX_SPEED = 60;
+
+    const r1 =
+        seededRandom(
+            `${messageId}:speed:1`
+        );
+
+    const r2 =
+        seededRandom(
+            `${messageId}:speed:2`
+        );
+
+    const normalized =
+        (r1 + r2) / 2;
+
+    const speed =
+        MIN_SPEED
+        +
+        normalized
+        *
+        (MAX_SPEED - MIN_SPEED);
+
+    return Math.round(speed * 10) / 10;
+}
+
+
+Exemple de résultat :
+
+    calculateBirdSpeed("MSG_A7291")
+
+    →
+
+    52.4 km/h
+
+
+Cette valeur est ensuite définitive pour ce voyage.
+
+
+================================================================================
+7. EXEMPLES DE RÉSULTATS
+================================================================================
+
+Les valeurs obtenues seront généralement dans une zone comme :
+
+    47 km/h
+    48 km/h
+    49 km/h
+    50 km/h
+    51 km/h
+    52 km/h
+    53 km/h
+
+
+Des valeurs comme :
+
+    43 km/h
+    44 km/h
+    56 km/h
+    57 km/h
+
+seront moins fréquentes.
+
+
+Des valeurs très proches de :
+
+    40 km/h
+
+ou :
+
+    60 km/h
+
+seront rares.
+
+
+IMPORTANT :
+
+Avec des nombres pseudo-aléatoires continus,
+obtenir mathématiquement exactement 40.000 ou 60.000 est extrêmement rare.
+
+Cependant, après arrondi, une vitesse affichée proche des limites
+peut éventuellement apparaître.
+
+
+================================================================================
+8. CALCUL DU TEMPS DE VOL
+================================================================================
+
+Le reste du calcul du pigeon ne change pas.
+
+
+Distance GPS :
+
+    distanceGpsKm
+
+
+Distance effective :
+
+    effectiveDistanceKm
+    =
+    distanceGpsKm
+    × routeFactor
+
+
+Puis :
+
+    flightHours
+    =
+    effectiveDistanceKm
+    /
+    effectiveSpeedKmH
+
+
+Exemple :
+
+    distance GPS :
+        500 km
+
+    facteur de détour :
+        1.10
+
+    distance effective :
+        550 km
+
+    vitesse tirée :
+        52.4 km/h
+
+
+Donc :
+
+    flightHours
+    =
+    550 / 52.4
+
+    ≈ 10.50 heures de vol
+
+
+Les règles existantes concernant :
+
+- heures de vol quotidiennes ;
+- repos ;
+- calcul de deliveryHours ;
+
+continuent ensuite normalement.
+
+
+================================================================================
+9. DATA À SAUVEGARDER
+================================================================================
+
+La vitesse calculée doit être enregistrée avec la livraison.
+
+
+Exemple :
+
+{
+    messageId: "MSG_A7291",
+
+    method: "BIRD",
+
+    distanceGpsKm: 500,
+
+    effectiveDistanceKm: 550,
+
+    effectiveSpeedKmH: 52.4,
+
+    flightHours: 10.50,
+
+    sentAt: "...",
+
+    estimatedDeliveryAt: "..."
+}
+
+
+IMPORTANT :
+
+effectiveSpeedKmH est une donnée historique du voyage.
+
+Une fois enregistrée :
+
+    NE JAMAIS LA RECALCULER.
+
+
+Même si les règles globales du pigeon changent plus tard,
+un ancien trajet conserve sa vitesse d'origine.
+
+
+================================================================================
+10. DIFFÉRENCE AVEC LA POSTE
+================================================================================
+
+Cette variation de vitesse concerne UNIQUEMENT les pigeons.
+
+
+PIGEON
+----------------------------------------------------------------------
+
+Trajet :
+
+    origine
+       |
+       v
+    pigeon
+       |
+       v
+    destination
+
+
+Variation naturelle :
+
+    vitesse du pigeon
+
+
+Vitesse :
+
+    40 → 60 km/h
+
+avec une forte probabilité autour de :
+
+    50 km/h
+
+
+Random :
+
+    OUI
+
+mais :
+
+    déterministe
+    +
+    calculé une seule fois à l'envoi
+
+
+----------------------------------------------------------------------
+
+
+POSTE
+----------------------------------------------------------------------
+
+La poste ne reçoit PAS de random artificiel supplémentaire.
+
+
+Ses variations proviennent déjà du système logistique :
+
+- heure d'envoi ;
+- collecte ;
+- hubs ;
+- gateways ;
+- changement de région ;
+- horaires d'ouverture ;
+- fermeture ;
+- samedi ;
+- dimanche ;
+- attente avant traitement ;
+- horaires des départs ;
+- transport ;
+- distribution finale.
+
+
+Les vitesses et règles de l'infrastructure restent déterministes.
+
+
+Donc :
+
+    PIGEON
+        =
+        système simple
+        +
+        légère imprévisibilité biologique
+
+
+    POSTE
+        =
+        système logistique complexe
+        +
+        comportement déterministe
+
+
+================================================================================
+11. RÈGLE FONDAMENTALE
+================================================================================
+
+La vitesse du pigeon est décidée AU MOMENT DE L'ENVOI.
+
+
+PROCESS :
+
+    utilisateur clique ENVOYER
+              |
+              v
+       création messageId
+              |
+              v
+      deux randoms seedés
+              |
+              v
+    calcul effectiveSpeedKmH
+              |
+              v
+       calcul du voyage
+              |
+              v
+    calcul estimatedDeliveryAt
+              |
+              v
+       sauvegarde complète
+
+
+Après cette étape :
+
+    aucun nouveau tirage aléatoire.
+
+
+Le voyage est définitivement fixé.
+
+
+================================================================================
+12. PARAMÈTRES RETENUS POUR LE MVP
+================================================================================
+
+BIRD_SPEED = {
+
+    minSpeedKmH: 40,
+
+    targetSpeedKmH: 50,
+
+    maxSpeedKmH: 60,
+
+    distribution: "TRIANGULAR",
+
+    randomSamples: 2,
+
+    deterministic: true,
+
+    seedSource: "messageId",
+
+    precisionKmH: 0.1
+
+}
+
+
+FORMULE :
+
+    r1 = seededRandom(messageId + ":speed:1")
+
+    r2 = seededRandom(messageId + ":speed:2")
+
+    normalized = (r1 + r2) / 2
+
+    speed = 40 + normalized * 20
+
+
+RÉSULTAT :
+
+    vitesse comprise entre environ 40 et 60 km/h
+
+    avec une concentration autour de 50 km/h.
+
+
+================================================================================
+FIN DE L'UPDATE
+================================================================================

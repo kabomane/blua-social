@@ -1,0 +1,4454 @@
+======================================================================
+SPÉCIFICATION COMPLÈTE — SYSTÈME DE LIVRAISON DE MESSAGES
+======================================================================
+
+VERSION :
+1.0
+
+OBJECTIF :
+
+Créer dans l'application deux méthodes artificielles d'envoi de messages :
+
+1. ENVOI PAR OISEAU
+2. ENVOI PAR POSTE
+
+Les messages ne sont pas reçus instantanément.
+
+Chaque méthode possède son propre système de calcul de délai.
+
+L'objectif est de donner à l'utilisateur l'impression que son message
+voyage réellement entre lui et le destinataire.
+
+Le système doit rester :
+
+- simple à coder
+- déterministe
+- facilement équilibrable
+- compréhensible
+- compatible avec n'importe quelle position GPS dans le monde
+- suffisamment crédible sans reproduire la réalité exacte
+
+
+======================================================================
+TABLE DES MATIÈRES
+======================================================================
+
+01. Philosophie générale
+02. Données GPS
+03. Calcul Haversine
+04. Données communes d'un message
+
+PARTIE A — OISEAU
+
+05. Principe de l'oiseau
+06. Paramètres du rouge-gorge
+07. Calcul de distance effective
+08. Calcul de vitesse
+09. Calcul du temps de vol
+10. Gestion des journées et du repos
+11. Variation aléatoire déterministe
+12. Position de l'oiseau
+13. Data à enregistrer
+14. Exemple Lille → Londres
+15. Exemple Lille → Montréal
+16. Exemple Lille → Tokyo
+
+PARTIE B — POSTE
+
+17. Principe du système postal
+18. Les 5 grandes régions
+19. Les 40 hubs
+20. Les 10 gateways
+21. Data d'un hub
+22. Trouver le hub le plus proche
+23. Routage dans une même région
+24. Routage entre régions
+25. Choix d'une gateway
+26. Suppression des doublons
+27. Collecte
+28. Transport utilisateur → hub
+29. Traitement d'un hub
+30. Horaires
+31. Samedi
+32. Dimanche
+33. Jours fériés
+34. Transport entre hubs
+35. Fréquence des départs
+36. Distribution finale
+37. Algorithme postal complet
+38. Timeline
+39. Position d'une lettre
+40. Random déterministe
+41. Exemples postaux
+42. Comparaison Oiseau/Poste
+43. Structure Data
+44. Architecture serveur
+45. Statuts UI
+46. Pseudocode complet
+47. Paramètres d'équilibrage
+48. Règles fondamentales
+
+
+======================================================================
+01. PHILOSOPHIE GÉNÉRALE
+======================================================================
+
+Les deux méthodes doivent fonctionner de manière volontairement opposée.
+
+
+OISEAU :
+
+Le message voyage directement de A vers B.
+
+Le principal facteur du délai est :
+
+LA DISTANCE
+
+
+POSTE :
+
+Le message voyage à travers une infrastructure.
+
+Le principal facteur du délai est :
+
+LA LOGISTIQUE
+
+
+L'oiseau doit être très efficace sur une petite distance,
+mais extrêmement lent sur une très longue distance.
+
+La poste doit être relativement lente même sur une petite distance,
+mais très efficace sur les grandes distances grâce aux transports rapides.
+
+
+Exemple conceptuel :
+
+Lille → Londres
+
+Oiseau :
+rapide
+
+Poste :
+plus lente à cause du traitement
+
+
+Lille → Tokyo
+
+Oiseau :
+plusieurs semaines
+
+Poste :
+quelques jours
+
+
+======================================================================
+02. DONNÉES GPS
+======================================================================
+
+Chaque utilisateur possède au minimum :
+
+latitude
+longitude
+
+
+Exemple Lille :
+
+latitude :
+50.6292
+
+longitude :
+3.0573
+
+
+Exemple Tokyo :
+
+latitude :
+35.6762
+
+longitude :
+139.6503
+
+
+Données supplémentaires recommandées :
+
+timezone
+countryCode
+cityName
+
+
+Exemple :
+
+{
+    lat: 50.6292,
+    lon: 3.0573,
+    timezone: "Europe/Paris",
+    countryCode: "FR",
+    cityName: "Lille"
+}
+
+
+======================================================================
+03. CALCUL HAVERSINE
+======================================================================
+
+Toutes les distances géographiques sont calculées avec Haversine.
+
+Cette formule permet de calculer la distance approximative
+entre deux coordonnées GPS sur la surface de la Terre.
+
+
+ENTRÉE :
+
+latitude A
+longitude A
+
+latitude B
+longitude B
+
+
+SORTIE :
+
+distance en kilomètres
+
+
+PSEUDOCODE :
+
+distanceKm(pointA, pointB)
+
+
+EXEMPLE JAVASCRIPT / TYPESCRIPT :
+
+function distanceKm(a, b) {
+
+    const R = 6371;
+
+    const toRad = deg =>
+        deg * Math.PI / 180;
+
+    const dLat =
+        toRad(b.lat - a.lat);
+
+    const dLon =
+        toRad(b.lon - a.lon);
+
+    const lat1 =
+        toRad(a.lat);
+
+    const lat2 =
+        toRad(b.lat);
+
+    const hav =
+        Math.sin(dLat / 2) ** 2
+        +
+        Math.cos(lat1)
+        *
+        Math.cos(lat2)
+        *
+        Math.sin(dLon / 2) ** 2;
+
+    return 2
+        * R
+        * Math.atan2(
+            Math.sqrt(hav),
+            Math.sqrt(1 - hav)
+        );
+}
+
+
+======================================================================
+04. DONNÉES COMMUNES D'UN MESSAGE
+======================================================================
+
+Chaque message doit contenir au minimum :
+
+messageId
+
+senderId
+receiverId
+
+method
+
+sentAt
+
+senderLat
+senderLon
+
+receiverLat
+receiverLon
+
+estimatedDeliveryAt
+
+
+METHOD peut être :
+
+"BIRD"
+
+ou
+
+"POST"
+
+
+EXEMPLE :
+
+{
+    messageId: "MSG_8F29A1",
+
+    senderId: "USER_1",
+    receiverId: "USER_2",
+
+    method: "POST",
+
+    sentAt: "2026-08-15T10:42:00Z",
+
+    senderLat: 50.6292,
+    senderLon: 3.0573,
+
+    receiverLat: 35.6762,
+    receiverLon: 139.6503,
+
+    estimatedDeliveryAt:
+        "2026-08-20T08:13:00Z"
+}
+
+
+======================================================================
+======================================================================
+PARTIE A — ENVOI PAR OISEAU
+======================================================================
+======================================================================
+
+
+======================================================================
+05. PRINCIPE DE L'OISEAU
+======================================================================
+
+Le système OISEAU ignore complètement :
+
+- les hubs
+- les régions
+- les pays
+- les frontières
+- les gateways
+- les centres de tri
+- les horaires d'ouverture
+- les week-ends
+- les jours fériés
+
+
+Le trajet est simplement :
+
+EXPÉDITEUR
+
+↓
+
+OISEAU
+
+↓
+
+DESTINATAIRE
+
+
+Le délai dépend principalement de :
+
+distance GPS
+
+× facteur de détour
+
+÷ vitesse
+
++ repos
+
+
+======================================================================
+06. PARAMÈTRES DU ROUGE-GORGE
+======================================================================
+
+Pour la première version :
+
+OISEAU :
+
+Rouge-gorge
+
+
+ID :
+
+ROBIN
+
+
+VITESSE MOYENNE :
+
+45 km/h
+
+
+HEURES DE VOL PAR JOUR :
+
+8 heures
+
+
+HEURES DE REPOS PAR JOUR :
+
+16 heures
+
+
+FACTEUR DE DÉTOUR :
+
+1.10
+
+
+VARIATION DE VITESSE :
+
+± 8 %
+
+
+Cela signifie que la vitesse effective peut être comprise entre :
+
+41.4 km/h
+
+et
+
+48.6 km/h
+
+
+Cette variation est choisie une seule fois au moment de l'envoi.
+
+
+DATA :
+
+ROBIN = {
+
+    id: "ROBIN",
+
+    speedKmH: 45,
+
+    flightHoursPerDay: 8,
+
+    restHoursPerDay: 16,
+
+    routeFactor: 1.10,
+
+    speedVariance: 0.08
+}
+
+
+======================================================================
+07. CALCUL DE DISTANCE EFFECTIVE
+======================================================================
+
+La distance GPS n'est pas utilisée directement.
+
+L'oiseau ne suit jamais une ligne absolument parfaite.
+
+On ajoute donc :
+
+10 %
+
+
+FORMULE :
+
+DISTANCE_EFFECTIVE
+=
+DISTANCE_GPS × 1.10
+
+
+EXEMPLE :
+
+distance GPS :
+
+9500 km
+
+
+distance effective :
+
+9500 × 1.10
+
+=
+
+10450 km
+
+
+CODE :
+
+const effectiveDistance =
+    gpsDistance * 1.10;
+
+
+======================================================================
+08. CALCUL DE LA VITESSE
+======================================================================
+
+La vitesse doit varier légèrement entre les voyages.
+
+Vitesse moyenne :
+
+45 km/h
+
+
+Variation :
+
+± 8 %
+
+
+FORMULE :
+
+MIN_SPEED
+=
+45 × 0.92
+
+MAX_SPEED
+=
+45 × 1.08
+
+
+Puis choisir une valeur déterministe entre les deux.
+
+
+EXEMPLE :
+
+vitesse obtenue :
+
+46.7 km/h
+
+
+CODE CONCEPTUEL :
+
+const minSpeed =
+    45 * (1 - 0.08);
+
+const maxSpeed =
+    45 * (1 + 0.08);
+
+const effectiveSpeed =
+    seededRandomBetween(
+        messageId,
+        minSpeed,
+        maxSpeed
+    );
+
+
+======================================================================
+09. CALCUL DU TEMPS DE VOL
+======================================================================
+
+FORMULE :
+
+FLIGHT_HOURS
+=
+DISTANCE_EFFECTIVE
+/
+EFFECTIVE_SPEED
+
+
+Exemple :
+
+10450 km
+
+÷
+
+45 km/h
+
+=
+
+232.2 heures de vol
+
+
+CODE :
+
+const flightHours =
+    effectiveDistance
+    /
+    effectiveSpeed;
+
+
+======================================================================
+10. GESTION DES JOURNÉES ET DU REPOS
+======================================================================
+
+L'oiseau vole :
+
+8 heures par jour
+
+
+Puis se repose :
+
+16 heures
+
+
+Un moyen simple de calculer :
+
+FULL_FLIGHT_DAYS
+=
+floor(
+    FLIGHT_HOURS
+    /
+    8
+)
+
+
+REMAINING_FLIGHT_HOURS
+=
+FLIGHT_HOURS
+%
+8
+
+
+Exemple :
+
+232 heures de vol
+
+
+232 / 8
+
+=
+
+29 journées de vol
+
+
+Cela représente environ :
+
+29 jours calendaires
+
+
+Une méthode plus précise peut simuler les journées.
+
+
+PSEUDOCODE :
+
+remainingFlight = flightHours
+currentTime = sentAt
+
+while remainingFlight > 0:
+
+    flightToday =
+        min(8, remainingFlight)
+
+    currentTime += flightToday
+
+    remainingFlight -= flightToday
+
+    if remainingFlight > 0:
+        currentTime += 16 heures de repos
+
+
+VERSION SIMPLIFIÉE :
+
+deliveryHours =
+    flightHours
+    *
+    (24 / 8)
+
+
+Donc :
+
+deliveryHours
+=
+flightHours × 3
+
+
+Attention :
+
+Pour le dernier jour,
+il est préférable de ne pas ajouter inutilement
+les 16 heures de repos finales.
+
+
+VERSION PLUS PRÉCISE :
+
+fullDays =
+    floor(flightHours / 8)
+
+remaining =
+    flightHours % 8
+
+
+SI remaining = 0 :
+
+calendarHours =
+    (fullDays - 1) * 24
+    + 8
+
+
+SINON :
+
+calendarHours =
+    fullDays * 24
+    + remaining
+
+
+======================================================================
+11. VARIATION ALÉATOIRE DÉTERMINISTE
+======================================================================
+
+Il ne faut PAS utiliser un random différent
+à chaque recalcul.
+
+Sinon :
+
+un message pourrait arriver lundi,
+puis mardi après un refresh.
+
+
+Toutes les valeurs aléatoires doivent utiliser une seed.
+
+
+Seed recommandée :
+
+messageId
+
+
+Exemple :
+
+MESSAGE :
+
+MSG_A7291
+
+
+Cette seed doit toujours produire :
+
+vitesse :
+
+44.73 km/h
+
+
+et jamais une autre vitesse.
+
+
+PSEUDOCODE :
+
+random =
+    seededRandom(messageId)
+
+
+speed =
+    lerp(
+        minSpeed,
+        maxSpeed,
+        random
+    )
+
+
+Une fonction simple possible :
+
+function hashString(str) {
+
+    let hash = 2166136261;
+
+    for (const char of str) {
+
+        hash ^= char.charCodeAt(0);
+
+        hash =
+            Math.imul(
+                hash,
+                16777619
+            );
+    }
+
+    return hash >>> 0;
+}
+
+
+Puis transformer le hash en valeur :
+
+0 → 1
+
+
+======================================================================
+12. POSITION DE L'OISEAU
+======================================================================
+
+L'oiseau peut être affiché sur une carte.
+
+Il n'est pas nécessaire de calculer une vraie trajectoire aérienne.
+
+
+On calcule :
+
+progression =
+temps écoulé effectif
+/
+durée totale
+
+
+Puis :
+
+latitude actuelle
+=
+lat départ
++
+(lat destination - lat départ)
+× progression
+
+
+longitude actuelle
+=
+lon départ
++
+(lon destination - lon départ)
+× progression
+
+
+EXEMPLE CODE :
+
+const progress =
+    elapsedMs / totalMs;
+
+const currentLat =
+    sender.lat
+    +
+    (receiver.lat - sender.lat)
+    * progress;
+
+const currentLon =
+    sender.lon
+    +
+    (receiver.lon - sender.lon)
+    * progress;
+
+
+IMPORTANT :
+
+Cette interpolation est correcte pour une représentation visuelle simple.
+
+Pour les très longues distances,
+une interpolation géodésique peut être ajoutée plus tard.
+
+
+======================================================================
+13. DATA À ENREGISTRER POUR L'OISEAU
+======================================================================
+
+Enregistrer :
+
+messageId
+
+birdId
+
+distanceGpsKm
+
+effectiveDistanceKm
+
+effectiveSpeedKmH
+
+flightHours
+
+deliveryHours
+
+sentAt
+
+estimatedDeliveryAt
+
+
+Exemple :
+
+{
+    method: "BIRD",
+
+    birdId: "ROBIN",
+
+    distanceGpsKm: 9520,
+
+    effectiveDistanceKm: 10472,
+
+    effectiveSpeedKmH: 44.8,
+
+    flightHours: 233.75,
+
+    deliveryHours: 697,
+
+    sentAt: "...",
+
+    estimatedDeliveryAt: "..."
+}
+
+
+======================================================================
+14. EXEMPLE OISEAU — LILLE → LONDRES
+======================================================================
+
+Distance approximative :
+
+243 km
+
+
+Distance corrigée :
+
+243 × 1.10
+
+=
+
+267 km
+
+
+Temps de vol :
+
+267 / 45
+
+=
+
+5.9 heures
+
+
+Comme le trajet tient dans une journée :
+
+temps total :
+
+environ 6 heures
+
+
+Donc :
+
+Lille → Londres
+
+OISEAU :
+
+environ 6 heures
+
+
+======================================================================
+15. EXEMPLE OISEAU — LILLE → MONTRÉAL
+======================================================================
+
+Distance approximative :
+
+5460 km
+
+
+Distance corrigée :
+
+5460 × 1.10
+
+=
+
+6006 km
+
+
+Temps de vol :
+
+6006 / 45
+
+=
+
+133.5 heures
+
+
+Journées de vol :
+
+133.5 / 8
+
+=
+
+16.7 journées
+
+
+Temps réel :
+
+environ 16 à 17 jours
+
+
+======================================================================
+16. EXEMPLE OISEAU — LILLE → TOKYO
+======================================================================
+
+Distance approximative :
+
+9520 km
+
+
+Distance corrigée :
+
+9520 × 1.10
+
+=
+
+10472 km
+
+
+Temps de vol :
+
+10472 / 45
+
+=
+
+232.7 heures
+
+
+Journées :
+
+232.7 / 8
+
+=
+
+29.1 jours
+
+
+Temps final :
+
+environ 29 jours
+
+
+======================================================================
+======================================================================
+PARTIE B — ENVOI PAR POSTE
+======================================================================
+======================================================================
+
+
+======================================================================
+17. PRINCIPE DU SYSTÈME POSTAL
+======================================================================
+
+La poste fonctionne à travers un réseau mondial simplifié.
+
+Le réseau contient :
+
+40 HUBS
+
+répartis dans :
+
+5 RÉGIONS
+
+
+Parmi les 40 hubs :
+
+10 sont des GATEWAYS INTERNATIONALES
+
+
+Les gateways servent aux échanges entre les grandes régions.
+
+
+TRAJET TYPE :
+
+UTILISATEUR
+
+↓
+
+COLLECTE
+
+↓
+
+HUB LOCAL
+
+↓
+
+GATEWAY éventuelle
+
+↓
+
+TRANSPORT INTERNATIONAL
+
+↓
+
+GATEWAY DESTINATION éventuelle
+
+↓
+
+HUB LOCAL DESTINATION
+
+↓
+
+DISTRIBUTION
+
+↓
+
+DESTINATAIRE
+
+
+======================================================================
+18. LES 5 GRANDES RÉGIONS
+======================================================================
+
+REGION 1 :
+
+EUROPE
+
+
+REGION 2 :
+
+AMERICAS
+
+
+REGION 3 :
+
+AFRICA
+
+
+REGION 4 :
+
+ASIA_PACIFIC
+
+
+REGION 5 :
+
+MIDDLE_EAST
+
+
+IMPORTANT :
+
+L'utilisateur n'est pas directement assigné à une région.
+
+Il est assigné au HUB LE PLUS PROCHE.
+
+Le hub contient sa région.
+
+Cela évite de coder des frontières géographiques.
+
+
+======================================================================
+19. LES 40 HUBS
+======================================================================
+
+
+----------------------------------------------------------------------
+EUROPE — 8 HUBS
+----------------------------------------------------------------------
+
+
+EU_PAR
+
+Ville :
+Paris
+
+Pays :
+France
+
+Latitude :
+48.8566
+
+Longitude :
+2.3522
+
+Timezone :
+Europe/Paris
+
+Gateway :
+OUI
+
+
+EU_LON
+
+Ville :
+Londres
+
+Pays :
+Royaume-Uni
+
+Latitude :
+51.5074
+
+Longitude :
+-0.1278
+
+Timezone :
+Europe/London
+
+Gateway :
+OUI
+
+
+EU_AMS
+
+Ville :
+Amsterdam
+
+Pays :
+Pays-Bas
+
+Latitude :
+52.3676
+
+Longitude :
+4.9041
+
+Timezone :
+Europe/Amsterdam
+
+Gateway :
+NON
+
+
+EU_MAD
+
+Ville :
+Madrid
+
+Pays :
+Espagne
+
+Latitude :
+40.4168
+
+Longitude :
+-3.7038
+
+Timezone :
+Europe/Madrid
+
+Gateway :
+NON
+
+
+EU_BER
+
+Ville :
+Berlin
+
+Pays :
+Allemagne
+
+Latitude :
+52.5200
+
+Longitude :
+13.4050
+
+Timezone :
+Europe/Berlin
+
+Gateway :
+NON
+
+
+EU_ROM
+
+Ville :
+Rome
+
+Pays :
+Italie
+
+Latitude :
+41.9028
+
+Longitude :
+12.4964
+
+Timezone :
+Europe/Rome
+
+Gateway :
+NON
+
+
+EU_WAW
+
+Ville :
+Varsovie
+
+Pays :
+Pologne
+
+Latitude :
+52.2297
+
+Longitude :
+21.0122
+
+Timezone :
+Europe/Warsaw
+
+Gateway :
+NON
+
+
+EU_STO
+
+Ville :
+Stockholm
+
+Pays :
+Suède
+
+Latitude :
+59.3293
+
+Longitude :
+18.0686
+
+Timezone :
+Europe/Stockholm
+
+Gateway :
+NON
+
+
+----------------------------------------------------------------------
+AMERICAS — 9 HUBS
+----------------------------------------------------------------------
+
+
+AM_YUL
+
+Ville :
+Montréal
+
+Pays :
+Canada
+
+Latitude :
+45.5019
+
+Longitude :
+-73.5674
+
+Timezone :
+America/Toronto
+
+Gateway :
+NON
+
+
+AM_NYC
+
+Ville :
+New York
+
+Pays :
+États-Unis
+
+Latitude :
+40.7128
+
+Longitude :
+-74.0060
+
+Timezone :
+America/New_York
+
+Gateway :
+OUI
+
+
+AM_CHI
+
+Ville :
+Chicago
+
+Pays :
+États-Unis
+
+Latitude :
+41.8781
+
+Longitude :
+-87.6298
+
+Timezone :
+America/Chicago
+
+Gateway :
+NON
+
+
+AM_LAX
+
+Ville :
+Los Angeles
+
+Pays :
+États-Unis
+
+Latitude :
+34.0522
+
+Longitude :
+-118.2437
+
+Timezone :
+America/Los_Angeles
+
+Gateway :
+OUI
+
+
+AM_MEX
+
+Ville :
+Mexico City
+
+Pays :
+Mexique
+
+Latitude :
+19.4326
+
+Longitude :
+-99.1332
+
+Timezone :
+America/Mexico_City
+
+Gateway :
+NON
+
+
+AM_BOG
+
+Ville :
+Bogotá
+
+Pays :
+Colombie
+
+Latitude :
+4.7110
+
+Longitude :
+-74.0721
+
+Timezone :
+America/Bogota
+
+Gateway :
+NON
+
+
+AM_LIM
+
+Ville :
+Lima
+
+Pays :
+Pérou
+
+Latitude :
+-12.0464
+
+Longitude :
+-77.0428
+
+Timezone :
+America/Lima
+
+Gateway :
+NON
+
+
+AM_SAO
+
+Ville :
+São Paulo
+
+Pays :
+Brésil
+
+Latitude :
+-23.5505
+
+Longitude :
+-46.6333
+
+Timezone :
+America/Sao_Paulo
+
+Gateway :
+NON
+
+
+AM_BUE
+
+Ville :
+Buenos Aires
+
+Pays :
+Argentine
+
+Latitude :
+-34.6037
+
+Longitude :
+-58.3816
+
+Timezone :
+America/Argentina/Buenos_Aires
+
+Gateway :
+NON
+
+
+----------------------------------------------------------------------
+AFRICA — 7 HUBS
+----------------------------------------------------------------------
+
+
+AF_CAS
+
+Ville :
+Casablanca
+
+Pays :
+Maroc
+
+Latitude :
+33.5731
+
+Longitude :
+-7.5898
+
+Timezone :
+Africa/Casablanca
+
+Gateway :
+NON
+
+
+AF_DKR
+
+Ville :
+Dakar
+
+Pays :
+Sénégal
+
+Latitude :
+14.7167
+
+Longitude :
+-17.4677
+
+Timezone :
+Africa/Dakar
+
+Gateway :
+NON
+
+
+AF_LOS
+
+Ville :
+Lagos
+
+Pays :
+Nigeria
+
+Latitude :
+6.5244
+
+Longitude :
+3.3792
+
+Timezone :
+Africa/Lagos
+
+Gateway :
+OUI
+
+
+AF_CAI
+
+Ville :
+Le Caire
+
+Pays :
+Égypte
+
+Latitude :
+30.0444
+
+Longitude :
+31.2357
+
+Timezone :
+Africa/Cairo
+
+Gateway :
+NON
+
+
+AF_ADD
+
+Ville :
+Addis-Abeba
+
+Pays :
+Éthiopie
+
+Latitude :
+9.0300
+
+Longitude :
+38.7400
+
+Timezone :
+Africa/Addis_Ababa
+
+Gateway :
+NON
+
+
+AF_NBO
+
+Ville :
+Nairobi
+
+Pays :
+Kenya
+
+Latitude :
+-1.2921
+
+Longitude :
+36.8219
+
+Timezone :
+Africa/Nairobi
+
+Gateway :
+OUI
+
+
+AF_JNB
+
+Ville :
+Johannesburg
+
+Pays :
+Afrique du Sud
+
+Latitude :
+-26.2041
+
+Longitude :
+28.0473
+
+Timezone :
+Africa/Johannesburg
+
+Gateway :
+NON
+
+
+----------------------------------------------------------------------
+ASIA_PACIFIC — 10 HUBS
+----------------------------------------------------------------------
+
+
+AS_TYO
+
+Ville :
+Tokyo
+
+Pays :
+Japon
+
+Latitude :
+35.6762
+
+Longitude :
+139.6503
+
+Timezone :
+Asia/Tokyo
+
+Gateway :
+OUI
+
+
+AS_SEL
+
+Ville :
+Séoul
+
+Pays :
+Corée du Sud
+
+Latitude :
+37.5665
+
+Longitude :
+126.9780
+
+Timezone :
+Asia/Seoul
+
+Gateway :
+NON
+
+
+AS_BJS
+
+Ville :
+Pékin
+
+Pays :
+Chine
+
+Latitude :
+39.9042
+
+Longitude :
+116.4074
+
+Timezone :
+Asia/Shanghai
+
+Gateway :
+NON
+
+
+AS_SHA
+
+Ville :
+Shanghai
+
+Pays :
+Chine
+
+Latitude :
+31.2304
+
+Longitude :
+121.4737
+
+Timezone :
+Asia/Shanghai
+
+Gateway :
+NON
+
+
+AS_DEL
+
+Ville :
+New Delhi
+
+Pays :
+Inde
+
+Latitude :
+28.6139
+
+Longitude :
+77.2090
+
+Timezone :
+Asia/Kolkata
+
+Gateway :
+NON
+
+
+AS_BOM
+
+Ville :
+Mumbai
+
+Pays :
+Inde
+
+Latitude :
+19.0760
+
+Longitude :
+72.8777
+
+Timezone :
+Asia/Kolkata
+
+Gateway :
+NON
+
+
+AS_BKK
+
+Ville :
+Bangkok
+
+Pays :
+Thaïlande
+
+Latitude :
+13.7563
+
+Longitude :
+100.5018
+
+Timezone :
+Asia/Bangkok
+
+Gateway :
+NON
+
+
+AS_SIN
+
+Ville :
+Singapour
+
+Pays :
+Singapour
+
+Latitude :
+1.3521
+
+Longitude :
+103.8198
+
+Timezone :
+Asia/Singapore
+
+Gateway :
+OUI
+
+
+AS_JKT
+
+Ville :
+Jakarta
+
+Pays :
+Indonésie
+
+Latitude :
+-6.2088
+
+Longitude :
+106.8456
+
+Timezone :
+Asia/Jakarta
+
+Gateway :
+NON
+
+
+AS_SYD
+
+Ville :
+Sydney
+
+Pays :
+Australie
+
+Latitude :
+-33.8688
+
+Longitude :
+151.2093
+
+Timezone :
+Australia/Sydney
+
+Gateway :
+NON
+
+
+----------------------------------------------------------------------
+MIDDLE_EAST — 6 HUBS
+----------------------------------------------------------------------
+
+
+ME_IST
+
+Ville :
+Istanbul
+
+Pays :
+Turquie
+
+Latitude :
+41.0082
+
+Longitude :
+28.9784
+
+Timezone :
+Europe/Istanbul
+
+Gateway :
+OUI
+
+
+ME_THR
+
+Ville :
+Téhéran
+
+Pays :
+Iran
+
+Latitude :
+35.6892
+
+Longitude :
+51.3890
+
+Timezone :
+Asia/Tehran
+
+Gateway :
+NON
+
+
+ME_BGW
+
+Ville :
+Bagdad
+
+Pays :
+Irak
+
+Latitude :
+33.3152
+
+Longitude :
+44.3661
+
+Timezone :
+Asia/Baghdad
+
+Gateway :
+NON
+
+
+ME_RUH
+
+Ville :
+Riyad
+
+Pays :
+Arabie saoudite
+
+Latitude :
+24.7136
+
+Longitude :
+46.6753
+
+Timezone :
+Asia/Riyadh
+
+Gateway :
+NON
+
+
+ME_DXB
+
+Ville :
+Dubaï
+
+Pays :
+Émirats arabes unis
+
+Latitude :
+25.2048
+
+Longitude :
+55.2708
+
+Timezone :
+Asia/Dubai
+
+Gateway :
+OUI
+
+
+ME_DOH
+
+Ville :
+Doha
+
+Pays :
+Qatar
+
+Latitude :
+25.2854
+
+Longitude :
+51.5310
+
+Timezone :
+Asia/Qatar
+
+Gateway :
+NON
+
+
+======================================================================
+20. LES 10 GATEWAYS
+======================================================================
+
+EUROPE :
+
+EU_PAR
+Paris
+
+EU_LON
+Londres
+
+
+AMERICAS :
+
+AM_NYC
+New York
+
+AM_LAX
+Los Angeles
+
+
+AFRICA :
+
+AF_LOS
+Lagos
+
+AF_NBO
+Nairobi
+
+
+ASIA_PACIFIC :
+
+AS_TYO
+Tokyo
+
+AS_SIN
+Singapour
+
+
+MIDDLE_EAST :
+
+ME_IST
+Istanbul
+
+ME_DXB
+Dubaï
+
+
+TOTAL :
+
+10 gateways
+
+
+======================================================================
+21. DATA D'UN HUB
+======================================================================
+
+Structure recommandée :
+
+{
+    id: "EU_PAR",
+
+    city: "Paris",
+
+    region: "EUROPE",
+
+    lat: 48.8566,
+
+    lon: 2.3522,
+
+    timezone: "Europe/Paris",
+
+    gateway: true,
+
+    processingMinHours: 8,
+
+    processingMaxHours: 16,
+
+    openHour: 6,
+
+    closeHour: 22
+}
+
+
+Hub non-gateway :
+
+processingMinHours:
+
+5
+
+
+processingMaxHours:
+
+12
+
+
+Gateway :
+
+processingMinHours:
+
+8
+
+
+processingMaxHours:
+
+16
+
+
+======================================================================
+22. TROUVER LE HUB LE PLUS PROCHE
+======================================================================
+
+L'application ne dessine aucune frontière.
+
+Pour un utilisateur :
+
+1. prendre ses coordonnées
+
+2. calculer sa distance vers chacun des 40 hubs
+
+3. garder le hub avec la distance minimale
+
+
+PSEUDOCODE :
+
+nearestHub = null
+bestDistance = infinity
+
+for hub in hubs:
+
+    distance =
+        Haversine(
+            user,
+            hub
+        )
+
+    if distance < bestDistance:
+
+        nearestHub = hub
+
+        bestDistance = distance
+
+
+CODE :
+
+function findNearestHub(location, hubs) {
+
+    let nearest = null;
+
+    let minDistance = Infinity;
+
+    for (const hub of hubs) {
+
+        const d =
+            distanceKm(
+                location,
+                hub
+            );
+
+        if (d < minDistance) {
+
+            minDistance = d;
+
+            nearest = hub;
+        }
+    }
+
+    return {
+        hub: nearest,
+        distanceKm: minDistance
+    };
+}
+
+
+IMPORTANT :
+
+Comparer les 40 hubs.
+
+Ne pas limiter arbitrairement la recherche
+à une région donnée.
+
+
+======================================================================
+23. ROUTAGE DANS UNE MÊME RÉGION
+======================================================================
+
+Si :
+
+originHub.region
+=
+destinationHub.region
+
+
+Alors :
+
+aucune gateway obligatoire.
+
+
+ROUTE :
+
+UTILISATEUR
+
+↓
+
+ORIGIN HUB
+
+↓
+
+DESTINATION HUB
+
+↓
+
+DESTINATAIRE
+
+
+Si les deux hubs sont identiques :
+
+UTILISATEUR
+
+↓
+
+HUB
+
+↓
+
+DESTINATAIRE
+
+
+Ne pas ajouter deux fois le même hub.
+
+
+EXEMPLE :
+
+Paris → Rome
+
+Paris Hub
+
+↓
+
+Rome Hub
+
+
+======================================================================
+24. ROUTAGE ENTRE RÉGIONS
+======================================================================
+
+Si :
+
+originHub.region
+!=
+destinationHub.region
+
+
+Alors une gateway doit être utilisée dans chaque région.
+
+
+ROUTE GÉNÉRALE :
+
+ORIGIN HUB
+
+↓
+
+ORIGIN GATEWAY
+
+↓
+
+DESTINATION GATEWAY
+
+↓
+
+DESTINATION HUB
+
+
+Mais si originHub est déjà une gateway :
+
+ne pas ajouter une gateway supplémentaire.
+
+
+Même règle pour destinationHub.
+
+
+======================================================================
+25. CHOIX D'UNE GATEWAY
+======================================================================
+
+Pour choisir une gateway :
+
+1. récupérer les gateways de la région
+
+2. calculer leur distance depuis le hub local
+
+3. prendre la plus proche
+
+
+CODE CONCEPTUEL :
+
+function findNearestGateway(
+    hub,
+    allHubs
+) {
+
+    const gateways =
+        allHubs.filter(
+            candidate =>
+                candidate.region === hub.region
+                &&
+                candidate.gateway === true
+        );
+
+    return findNearestHub(
+        hub,
+        gateways
+    ).hub;
+}
+
+
+======================================================================
+26. SUPPRESSION DES DOUBLONS
+======================================================================
+
+Exemple :
+
+originHub :
+
+Paris
+
+
+originGateway :
+
+Paris
+
+
+destinationGateway :
+
+Tokyo
+
+
+destinationHub :
+
+Tokyo
+
+
+Route brute :
+
+[
+    Paris,
+    Paris,
+    Tokyo,
+    Tokyo
+]
+
+
+Route finale :
+
+[
+    Paris,
+    Tokyo
+]
+
+
+CODE :
+
+function removeAdjacentDuplicates(route) {
+
+    return route.filter(
+        (hub, index) =>
+            index === 0
+            ||
+            hub.id
+            !==
+            route[index - 1].id
+    );
+}
+
+
+======================================================================
+27. COLLECTE
+======================================================================
+
+Un message POST ne quitte pas instantanément l'expéditeur.
+
+
+Délai de collecte :
+
+minimum :
+
+2 heures
+
+
+maximum :
+
+6 heures
+
+
+La valeur exacte est déterministe.
+
+
+FORMULE :
+
+collectionHours
+=
+randomBetweenSeeded(
+    2,
+    6
+)
+
+
+Exemple :
+
+3h42
+
+
+======================================================================
+28. TRANSPORT UTILISATEUR → HUB
+======================================================================
+
+Distance :
+
+Haversine(
+    utilisateur,
+    hub
+)
+
+
+Vitesse locale :
+
+65 km/h
+
+
+Temps minimal :
+
+2 heures
+
+
+FORMULE :
+
+LOCAL_TRANSPORT_HOURS
+=
+MAX(
+    distance / 65,
+    2
+)
+
+
+CODE :
+
+const localTransportHours =
+    Math.max(
+        distanceToHub / 65,
+        2
+    );
+
+
+Cela évite qu'un utilisateur situé exactement dans une ville-hub
+obtienne un transport de 0 minute.
+
+
+======================================================================
+29. TRAITEMENT D'UN HUB
+======================================================================
+
+Chaque lettre doit être traitée dans chaque hub traversé.
+
+
+HUB NORMAL :
+
+5 à 12 heures
+
+
+GATEWAY :
+
+8 à 16 heures
+
+
+EXEMPLE :
+
+Paris Gateway
+
+durée obtenue :
+
+11h24
+
+
+Cette durée représente du TEMPS DE TRAVAIL,
+pas nécessairement du temps calendaire.
+
+
+Si le hub ferme pendant le traitement :
+
+le traitement reprend plus tard.
+
+
+======================================================================
+30. HORAIRES DES HUBS
+======================================================================
+
+Lundi à vendredi :
+
+06:00 → 22:00
+
+
+Samedi :
+
+08:00 → 16:00
+
+
+Dimanche :
+
+fermé
+
+
+Toutes les heures sont exprimées
+dans le fuseau horaire LOCAL du hub.
+
+
+Exemple :
+
+Paris :
+
+Europe/Paris
+
+
+Tokyo :
+
+Asia/Tokyo
+
+
+Une vraie bibliothèque de timezone doit idéalement être utilisée.
+
+
+Exemples :
+
+Temporal
+
+Luxon
+
+date-fns-tz
+
+
+======================================================================
+31. SAMEDI
+======================================================================
+
+Le samedi :
+
+activité réduite à 50 %.
+
+
+Donc :
+
+1 heure réelle de traitement
+
+consomme :
+
+2 heures calendaires
+
+
+Exemple :
+
+reste :
+
+4 heures de traitement
+
+
+Samedi :
+
+8 heures calendaires nécessaires
+
+
+Fenêtre :
+
+08:00 → 16:00
+
+
+Cela utilise toute la journée.
+
+
+======================================================================
+32. DIMANCHE
+======================================================================
+
+Aucun traitement.
+
+
+Aucune collecte standard.
+
+
+Aucune distribution finale.
+
+
+La lettre peut rester immobilisée.
+
+
+Exemple :
+
+samedi 16:00
+
+↓
+
+attente
+
+↓
+
+lundi 06:00
+
+
+======================================================================
+33. JOURS FÉRIÉS
+======================================================================
+
+OPTIONNEL POUR MVP.
+
+
+Le moteur doit néanmoins permettre :
+
+HOLIDAYS = [
+
+    {
+        date: "2026-12-25",
+        region: "EUROPE",
+        name: "Holiday"
+    }
+
+]
+
+
+Lors d'un jour férié :
+
+le hub fonctionne comme un dimanche.
+
+
+Pour simplifier :
+
+les jours fériés sont définis par RÉGION,
+pas par pays.
+
+
+======================================================================
+34. TRANSPORT ENTRE HUBS
+======================================================================
+
+Calculer la distance Haversine entre les hubs.
+
+
+RÈGLE 1 :
+
+distance < 500 km
+
+
+TYPE :
+
+GROUND
+
+
+VITESSE :
+
+75 km/h
+
+
+--------------------------------------------------
+
+
+RÈGLE 2 :
+
+distance entre 500 et 1500 km
+
+
+TYPE :
+
+FAST_GROUND
+
+
+VITESSE :
+
+120 km/h
+
+
+--------------------------------------------------
+
+
+RÈGLE 3 :
+
+distance > 1500 km
+
+
+TYPE :
+
+PLANE
+
+
+VITESSE :
+
+750 km/h
+
+
+--------------------------------------------------
+
+
+RÈGLE PRIORITAIRE :
+
+si les deux hubs appartiennent à deux régions différentes :
+
+TYPE :
+
+PLANE
+
+
+même si leur distance est inférieure à 1500 km.
+
+
+CODE :
+
+function getTransportMode(
+    hubA,
+    hubB,
+    distance
+) {
+
+    if (hubA.region !== hubB.region) {
+
+        return {
+            type: "PLANE",
+            speedKmH: 750
+        };
+    }
+
+    if (distance < 500) {
+
+        return {
+            type: "GROUND",
+            speedKmH: 75
+        };
+    }
+
+    if (distance < 1500) {
+
+        return {
+            type: "FAST_GROUND",
+            speedKmH: 120
+        };
+    }
+
+    return {
+        type: "PLANE",
+        speedKmH: 750
+    };
+}
+
+
+======================================================================
+35. FRÉQUENCE DES DÉPARTS
+======================================================================
+
+Les transports ne partent pas instantanément.
+
+
+GROUND :
+
+départ toutes les 4 heures
+
+
+FAST_GROUND :
+
+départ toutes les 6 heures
+
+
+PLANE même région :
+
+départ toutes les 8 heures
+
+
+PLANE entre régions :
+
+départ toutes les 12 heures
+
+
+Créneaux basés sur l'heure locale du hub de départ.
+
+
+Exemple inter-région :
+
+00:00
+
+12:00
+
+
+Courrier prêt :
+
+14:07
+
+
+Prochain départ :
+
+00:00 le lendemain
+
+
+Attente :
+
+9h53
+
+
+ALGO SIMPLIFIÉ :
+
+frequency = 12
+
+
+nextDepartureHour =
+ceil(
+    currentHour / frequency
+)
+× frequency
+
+
+Attention au passage au jour suivant.
+
+
+VERSION CONCEPTUELLE :
+
+function hoursUntilNextDeparture(
+    currentHour,
+    frequency
+) {
+
+    const next =
+        Math.ceil(
+            currentHour / frequency
+        )
+        * frequency;
+
+    if (next < 24) {
+
+        return next - currentHour;
+    }
+
+    return 24
+        - currentHour
+        + (next % 24);
+}
+
+
+======================================================================
+36. DISTRIBUTION FINALE
+======================================================================
+
+Après le dernier hub :
+
+transport hub → destinataire
+
+
+Même règle :
+
+distance / 65 km/h
+
+minimum :
+
+2 heures
+
+
+Puis ajouter :
+
+FINAL_DELIVERY_DELAY
+
+
+minimum :
+
+2 heures
+
+
+maximum :
+
+6 heures
+
+
+Valeur déterministe.
+
+
+======================================================================
+37. ALGORITHME POSTAL COMPLET
+======================================================================
+
+ÉTAPE 01
+
+Récupérer :
+
+GPS sender
+GPS receiver
+sentAt
+messageId
+
+
+ÉTAPE 02
+
+Calculer originHub.
+
+
+ÉTAPE 03
+
+Calculer destinationHub.
+
+
+ÉTAPE 04
+
+Comparer les régions.
+
+
+ÉTAPE 05
+
+Construire la route des hubs.
+
+
+SI même région :
+
+[
+    originHub,
+    destinationHub
+]
+
+
+SI régions différentes :
+
+[
+    originHub,
+    nearestOriginGateway,
+    nearestDestinationGateway,
+    destinationHub
+]
+
+
+ÉTAPE 06
+
+Supprimer les doublons adjacents.
+
+
+ÉTAPE 07
+
+Calculer délai de collecte.
+
+
+ÉTAPE 08
+
+Calculer transport :
+
+sender → premier hub
+
+
+ÉTAPE 09
+
+Pour chaque hub :
+
+attendre ouverture si nécessaire
+
+traiter la lettre
+
+respecter :
+
+- horaires
+- samedi
+- dimanche
+- jours fériés
+
+
+ÉTAPE 10
+
+Si un autre hub existe :
+
+calculer mode transport
+
+calculer prochain départ
+
+attendre le départ
+
+calculer durée du trajet
+
+
+ÉTAPE 11
+
+Répéter jusqu'au dernier hub.
+
+
+ÉTAPE 12
+
+Transport dernier hub → destinataire.
+
+
+ÉTAPE 13
+
+Distribution finale.
+
+
+ÉTAPE 14
+
+Créer estimatedDeliveryAt.
+
+
+ÉTAPE 15
+
+Sauvegarder la timeline complète.
+
+
+======================================================================
+38. TIMELINE
+======================================================================
+
+La timeline doit permettre à l'application
+de savoir exactement où se trouve le message.
+
+
+Exemple :
+
+[
+    {
+        type: "SENT",
+        start: "..."
+    },
+
+    {
+        type: "COLLECTION",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "LOCAL_TRANSPORT",
+        from: "sender",
+        to: "EU_PAR",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "HUB_PROCESSING",
+        hub: "EU_PAR",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "WAITING_DEPARTURE",
+        hub: "EU_PAR",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "INTER_HUB_TRANSPORT",
+        from: "EU_PAR",
+        to: "AS_TYO",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "HUB_PROCESSING",
+        hub: "AS_TYO",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "FINAL_DELIVERY",
+        start: "...",
+        end: "..."
+    },
+
+    {
+        type: "DELIVERED",
+        time: "..."
+    }
+]
+
+
+======================================================================
+39. POSITION D'UNE LETTRE
+======================================================================
+
+Si le message est :
+
+EN TRAITEMENT
+
+position :
+
+coordonnées du hub
+
+
+Si :
+
+EN ATTENTE
+
+position :
+
+coordonnées du hub
+
+
+Si :
+
+EN TRANSPORT ENTRE DEUX HUBS
+
+interpoler :
+
+hub A
+
+→
+
+hub B
+
+
+progression :
+
+(now - transportStart)
+/
+(transportEnd - transportStart)
+
+
+Puis :
+
+currentLat =
+latA
++
+(latB - latA)
+× progression
+
+
+currentLon =
+lonA
++
+(lonB - lonA)
+× progression
+
+
+Même principe pour :
+
+sender → first hub
+
+et
+
+last hub → receiver
+
+
+======================================================================
+40. RANDOM DÉTERMINISTE
+======================================================================
+
+Toutes les variations doivent être calculées
+à partir du messageId.
+
+
+Mais il faut éviter d'utiliser exactement la même valeur
+pour chaque étape.
+
+
+Créer des seeds dérivées.
+
+
+Exemple :
+
+MSG_123_COLLECTION
+
+MSG_123_HUB_EU_PAR
+
+MSG_123_HUB_AM_NYC
+
+MSG_123_FINAL_DELIVERY
+
+MSG_123_BIRD_SPEED
+
+
+Cela garantit :
+
+- stabilité
+- diversité
+- déterminisme
+
+
+Exemple :
+
+seededRandom(
+    messageId
+    +
+    "_HUB_"
+    +
+    hub.id
+)
+
+
+======================================================================
+41. EXEMPLES POSTAUX
+======================================================================
+
+
+----------------------------------------------------------------------
+EXEMPLE 1 — LILLE → LONDRES
+----------------------------------------------------------------------
+
+Utilisateur Lille
+
+↓
+
+hub le plus proche :
+
+Paris
+
+
+Utilisateur Londres
+
+↓
+
+hub local :
+
+Londres
+
+
+Même région :
+
+EUROPE
+
+
+Route :
+
+Paris
+
+↓
+
+Londres
+
+
+Exemple de timeline :
+
+Lundi 09:00
+
+Message envoyé
+
+
+09:00 → 12:10
+
+collecte
+
+
+12:10 → 15:15
+
+transport Lille → Paris
+
+
+15:15 → 23:30 théorique
+
+traitement Paris
+
+
+Mais Paris ferme à 22:00.
+
+
+Reste :
+
+1h30
+
+
+Mardi :
+
+06:00 → 07:30
+
+fin du traitement
+
+
+Prochain départ :
+
+08:00
+
+
+Paris → Londres :
+
+transport
+
+
+Traitement Londres
+
+
+Distribution
+
+
+Temps final :
+
+environ 1 à 2 jours
+
+
+OISEAU :
+
+environ 6 heures
+
+
+Avantage :
+
+OISEAU
+
+
+----------------------------------------------------------------------
+EXEMPLE 2 — LILLE → MONTRÉAL
+----------------------------------------------------------------------
+
+Hub Lille :
+
+Paris
+
+
+Paris :
+
+gateway
+
+
+Hub Montréal :
+
+Montréal
+
+
+Montréal :
+
+non gateway
+
+
+Gateway Amériques la plus proche :
+
+New York
+
+
+Route :
+
+Lille
+
+↓
+
+Paris
+
+↓
+
+New York
+
+↓
+
+Montréal
+
+↓
+
+destinataire
+
+
+Timeline fictive :
+
+Lundi 09:00
+
+envoi
+
+
++ 3h
+
+collecte
+
+
++ 3h
+
+Paris
+
+
++ 10h
+
+traitement
+
+
+attente prochain départ inter-région
+
+
++ environ 8h
+
+Paris → New York
+
+
++ 11h
+
+tri New York
+
+
+attente liaison New York → Montréal
+
+
+transport
+
+
+tri Montréal
+
+
+distribution
+
+
+Temps final :
+
+environ 3 à 5 jours
+
+
+OISEAU :
+
+environ 17 jours
+
+
+Avantage :
+
+POSTE
+
+
+----------------------------------------------------------------------
+EXEMPLE 3 — LILLE → TOKYO
+----------------------------------------------------------------------
+
+Hub Lille :
+
+Paris
+
+
+Paris :
+
+gateway
+
+
+Hub Tokyo :
+
+Tokyo
+
+
+Tokyo :
+
+gateway
+
+
+Route :
+
+Paris
+
+↓
+
+Tokyo
+
+
+Timeline :
+
+collecte
+
+↓
+
+Lille → Paris
+
+↓
+
+tri Paris
+
+↓
+
+attente avion
+
+↓
+
+Paris → Tokyo
+
+↓
+
+tri Tokyo
+
+↓
+
+distribution
+
+
+Temps :
+
+environ 4 à 6 jours
+
+
+OISEAU :
+
+environ 29 jours
+
+
+Avantage :
+
+POSTE
+
+
+----------------------------------------------------------------------
+EXEMPLE 4 — STOCKHOLM → JAKARTA
+----------------------------------------------------------------------
+
+Hub Stockholm :
+
+EU_STO
+
+
+Gateway Europe :
+
+calcul entre Paris et Londres
+
+
+Supposons :
+
+Paris
+
+
+Hub Jakarta :
+
+AS_JKT
+
+
+Gateway Asia la plus proche :
+
+Singapour
+
+
+Route :
+
+EU_STO
+
+↓
+
+EU_PAR
+
+↓
+
+AS_SIN
+
+↓
+
+AS_JKT
+
+
+Puis :
+
+destinataire
+
+
+Plus de hubs
+
+=
+
+plus de traitement
+
+=
+
+plus de délai
+
+
+======================================================================
+42. COMPARAISON OISEAU / POSTE
+======================================================================
+
+LILLE → LONDRES
+
+Oiseau :
+
+~6 h
+
+Poste :
+
+~1 à 2 jours
+
+
+----------------------------------------
+
+
+LILLE → MONTRÉAL
+
+Oiseau :
+
+~17 jours
+
+Poste :
+
+~3 à 5 jours
+
+
+----------------------------------------
+
+
+LILLE → TOKYO
+
+Oiseau :
+
+~29 jours
+
+Poste :
+
+~4 à 6 jours
+
+
+----------------------------------------
+
+
+MONTRÉAL → TOKYO
+
+Oiseau :
+
+~31 jours
+
+Poste :
+
+~5 à 7 jours
+
+
+Le point d'équilibre doit rester réglable.
+
+
+======================================================================
+43. STRUCTURE DATA
+======================================================================
+
+DATA GLOBALE :
+
+HUBS
+
+40 éléments
+
+
+GATEWAYS
+
+déduites grâce à :
+
+gateway: true
+
+
+BIRDS
+
+au minimum :
+
+ROBIN
+
+
+DELIVERY_RULES
+
+
+HOLIDAYS
+
+optionnel
+
+
+--------------------------------------------------
+
+
+EXEMPLE DELIVERY_RULES :
+
+{
+    bird: {
+
+        speedKmH: 45,
+
+        routeFactor: 1.10,
+
+        flightHoursPerDay: 8,
+
+        speedVariance: 0.08
+    },
+
+    post: {
+
+        collectionMinHours: 2,
+
+        collectionMaxHours: 6,
+
+        localSpeedKmH: 65,
+
+        localMinHours: 2,
+
+        normalHubProcessingMin: 5,
+
+        normalHubProcessingMax: 12,
+
+        gatewayProcessingMin: 8,
+
+        gatewayProcessingMax: 16,
+
+        finalDeliveryMinHours: 2,
+
+        finalDeliveryMaxHours: 6,
+
+        groundSpeedKmH: 75,
+
+        fastGroundSpeedKmH: 120,
+
+        planeSpeedKmH: 750
+    }
+}
+
+
+======================================================================
+44. ARCHITECTURE SERVEUR
+======================================================================
+
+TRÈS IMPORTANT :
+
+Le voyage doit être calculé AU MOMENT DE L'ENVOI.
+
+
+PROCESS :
+
+Utilisateur clique :
+
+ENVOYER
+
+
+Serveur reçoit :
+
+message
+sender GPS
+receiver GPS
+method
+
+
+Serveur calcule :
+
+delivery route
+
+timeline
+
+estimatedDeliveryAt
+
+
+Serveur sauvegarde tout.
+
+
+Ensuite :
+
+aucun recalcul complet n'est nécessaire.
+
+
+Quand l'application veut connaître l'état du message :
+
+elle lit :
+
+timeline
+
++
+
+heure actuelle
+
+
+Puis trouve l'étape active.
+
+
+Cela évite :
+
+- résultats différents
+- bugs de random
+- changements de délai
+- recalculs inutiles
+- différences client/serveur
+
+
+======================================================================
+45. STATUTS UI
+======================================================================
+
+OISEAU :
+
+PREPARING
+
+BIRD_FLYING
+
+BIRD_RESTING
+
+ARRIVING
+
+DELIVERED
+
+
+Exemples UI :
+
+"Robin a quitté Lille"
+
+"Robin est en vol"
+
+"Robin se repose"
+
+"6 204 km restants"
+
+"Arrivée estimée dans 18 jours"
+
+
+--------------------------------------------------
+
+
+POSTE :
+
+POSTED
+
+WAITING_COLLECTION
+
+LOCAL_TRANSPORT
+
+ARRIVED_AT_HUB
+
+PROCESSING
+
+WAITING_DEPARTURE
+
+IN_TRANSIT
+
+ARRIVED_DESTINATION_HUB
+
+OUT_FOR_DELIVERY
+
+DELIVERED
+
+
+Exemples :
+
+"Votre lettre attend d'être collectée"
+
+"En route vers Paris"
+
+"En traitement à Paris"
+
+"En attente du prochain départ"
+
+"En transit vers Tokyo"
+
+"Arrivée au centre de Tokyo"
+
+"En cours de distribution"
+
+"Message livré"
+
+
+======================================================================
+46. PSEUDOCODE COMPLET
+======================================================================
+
+
+----------------------------------------------------------------------
+BIRD
+----------------------------------------------------------------------
+
+function calculateBirdDelivery(
+    sender,
+    receiver,
+    messageId,
+    sentAt
+):
+
+    gpsDistance =
+        Haversine(
+            sender,
+            receiver
+        )
+
+    effectiveDistance =
+        gpsDistance
+        * 1.10
+
+    random =
+        seededRandom(
+            messageId
+            + "_BIRD_SPEED"
+        )
+
+    speed =
+        randomBetween(
+            41.4,
+            48.6,
+            random
+        )
+
+    flightHours =
+        effectiveDistance
+        /
+        speed
+
+    fullDays =
+        floor(
+            flightHours
+            /
+            8
+        )
+
+    remainingHours =
+        flightHours
+        %
+        8
+
+    if remainingHours == 0:
+
+        calendarHours =
+            max(
+                8,
+                (fullDays - 1) * 24 + 8
+            )
+
+    else:
+
+        calendarHours =
+            fullDays * 24
+            + remainingHours
+
+    deliveryAt =
+        sentAt
+        + calendarHours
+
+    return {
+        distance,
+        effectiveDistance,
+        speed,
+        flightHours,
+        calendarHours,
+        deliveryAt
+    }
+
+
+----------------------------------------------------------------------
+POST
+----------------------------------------------------------------------
+
+function calculatePostDelivery(
+    sender,
+    receiver,
+    messageId,
+    sentAt
+):
+
+    origin =
+        findNearestHub(
+            sender
+        )
+
+    destination =
+        findNearestHub(
+            receiver
+        )
+
+
+    if origin.region
+       ==
+       destination.region:
+
+        route =
+            [
+                origin,
+                destination
+            ]
+
+    else:
+
+        originGateway =
+
+            origin.gateway
+            ?
+            origin
+            :
+            findNearestGateway(
+                origin
+            )
+
+
+        destinationGateway =
+
+            destination.gateway
+            ?
+            destination
+            :
+            findNearestGateway(
+                destination
+            )
+
+
+        route =
+            [
+                origin,
+                originGateway,
+                destinationGateway,
+                destination
+            ]
+
+
+    route =
+        removeAdjacentDuplicates(
+            route
+        )
+
+
+    timeline = []
+
+
+    currentTime =
+        sentAt
+
+
+    collectionDelay =
+        deterministicRandom(
+            messageId
+            + "_COLLECTION",
+            2,
+            6
+        )
+
+
+    currentTime += collectionDelay
+
+
+    timeline.add(
+        COLLECTION
+    )
+
+
+    distanceToOrigin =
+        Haversine(
+            sender,
+            origin
+        )
+
+
+    localTransport =
+        max(
+            distanceToOrigin
+            /
+            65,
+            2
+        )
+
+
+    currentTime += localTransport
+
+
+    timeline.add(
+        LOCAL_TRANSPORT
+    )
+
+
+    for each hub in route:
+
+
+        currentTime =
+            moveToNextOperatingTime(
+                hub,
+                currentTime
+            )
+
+
+        processingTime =
+
+            hub.gateway
+            ?
+            deterministicRandom(
+                messageId
+                + hub.id,
+                8,
+                16
+            )
+            :
+            deterministicRandom(
+                messageId
+                + hub.id,
+                5,
+                12
+            )
+
+
+        currentTime =
+            consumeWorkingHours(
+                hub,
+                currentTime,
+                processingTime
+            )
+
+
+        timeline.add(
+            HUB_PROCESSING
+        )
+
+
+        if hub is not final hub:
+
+
+            nextHub =
+                route[next]
+
+
+            distance =
+                Haversine(
+                    hub,
+                    nextHub
+                )
+
+
+            transportMode =
+                getTransportMode(
+                    hub,
+                    nextHub,
+                    distance
+                )
+
+
+            frequency =
+                getDepartureFrequency(
+                    transportMode,
+                    sameRegion
+                )
+
+
+            departureTime =
+                getNextDeparture(
+                    currentTime,
+                    frequency
+                )
+
+
+            timeline.add(
+                WAITING_DEPARTURE
+            )
+
+
+            travelHours =
+                distance
+                /
+                transportMode.speed
+
+
+            currentTime =
+                departureTime
+                +
+                travelHours
+
+
+            timeline.add(
+                INTER_HUB_TRANSPORT
+            )
+
+
+    distanceToReceiver =
+        Haversine(
+            destination,
+            receiver
+        )
+
+
+    finalTransport =
+        max(
+            distanceToReceiver
+            /
+            65,
+            2
+        )
+
+
+    currentTime +=
+        finalTransport
+
+
+    finalDelay =
+        deterministicRandom(
+            messageId
+            + "_FINAL",
+            2,
+            6
+        )
+
+
+    currentTime +=
+        finalDelay
+
+
+    timeline.add(
+        FINAL_DELIVERY
+    )
+
+
+    return {
+
+        originHub:
+            origin.id,
+
+        destinationHub:
+            destination.id,
+
+        route:
+            route.map(
+                h => h.id
+            ),
+
+        timeline,
+
+        estimatedDeliveryAt:
+            currentTime
+    }
+
+
+======================================================================
+47. PARAMÈTRES D'ÉQUILIBRAGE
+======================================================================
+
+Toutes ces valeurs doivent idéalement rester
+dans une configuration centralisée.
+
+Ne pas les disperser dans le code.
+
+
+PARAMÈTRES OISEAU :
+
+speedKmH
+
+flightHoursPerDay
+
+routeFactor
+
+speedVariance
+
+
+PARAMÈTRES POSTE :
+
+collectionMin
+
+collectionMax
+
+localSpeed
+
+localMinTime
+
+normalHubProcessingMin
+
+normalHubProcessingMax
+
+gatewayProcessingMin
+
+gatewayProcessingMax
+
+groundSpeed
+
+fastGroundSpeed
+
+planeSpeed
+
+groundDepartureFrequency
+
+fastGroundDepartureFrequency
+
+regionalPlaneFrequency
+
+internationalPlaneFrequency
+
+finalDistributionMin
+
+finalDistributionMax
+
+saturdayEfficiency
+
+
+Ainsi,
+si la poste est trop rapide :
+
+augmenter :
+
+processing
+
+ou
+
+departureFrequency
+
+
+Si l'oiseau est trop rapide :
+
+réduire :
+
+speed
+
+ou
+
+flightHoursPerDay
+
+
+Si l'oiseau est trop lent :
+
+augmenter :
+
+flightHoursPerDay
+
+
+IMPORTANT :
+
+Ne pas modifier directement des dizaines de fonctions.
+
+Modifier uniquement :
+
+DELIVERY_RULES
+
+
+======================================================================
+48. RÈGLES FONDAMENTALES À NE PAS CASSER
+======================================================================
+
+RÈGLE 1
+
+L'oiseau ne passe JAMAIS par les hubs.
+
+
+RÈGLE 2
+
+La poste utilise TOUJOURS le hub géographiquement le plus proche.
+
+
+RÈGLE 3
+
+Il existe exactement 40 hubs dans cette version.
+
+
+RÈGLE 4
+
+Il existe exactement 10 gateways.
+
+
+RÈGLE 5
+
+Une liaison entre deux régions doit passer par des gateways.
+
+
+RÈGLE 6
+
+Une liaison dans une même région ne nécessite pas de gateway.
+
+
+RÈGLE 7
+
+Si un hub local est déjà une gateway,
+ne pas ajouter une gateway supplémentaire.
+
+
+RÈGLE 8
+
+Les doublons dans la route sont supprimés.
+
+
+RÈGLE 9
+
+Tous les calculs géographiques utilisent Haversine.
+
+
+RÈGLE 10
+
+Tous les randoms importants utilisent une seed basée sur messageId.
+
+
+RÈGLE 11
+
+Une fois le voyage généré,
+il ne change plus.
+
+
+RÈGLE 12
+
+estimatedDeliveryAt est calculé au moment de l'envoi.
+
+
+RÈGLE 13
+
+La timeline est sauvegardée.
+
+
+RÈGLE 14
+
+L'état actuel est dérivé de :
+
+timeline + heure actuelle
+
+
+RÈGLE 15
+
+L'oiseau doit être principalement limité par la distance.
+
+
+RÈGLE 16
+
+La poste doit être principalement limitée par :
+
+- hubs
+- traitement
+- horaires
+- week-ends
+- correspondances
+
+
+RÈGLE 17
+
+L'avion permet à la poste de battre l'oiseau
+sur les longues distances.
+
+
+RÈGLE 18
+
+L'oiseau doit généralement battre la poste
+sur les petites distances.
+
+
+RÈGLE 19
+
+Les valeurs numériques sont des paramètres de gameplay,
+pas une reproduction exacte du monde réel.
+
+
+RÈGLE 20
+
+Le système doit rester suffisamment simple
+pour pouvoir être compris et recréé
+à partir de ce seul document.
+
+
+======================================================================
+RÉSUMÉ ULTRA COURT POUR UNE IA
+======================================================================
+
+Créer deux moteurs de livraison.
+
+
+BIRD :
+
+GPS A
+→ Haversine
+→ ×1.10
+→ vitesse environ 45 km/h
+→ maximum 8h de vol/jour
+→ repos
+→ date d'arrivée
+
+
+POST :
+
+GPS A
+→ nearest hub parmi 40
+→ collecte
+→ transport local
+→ traitement hub
+→ si autre région :
+     gateway région A
+     → avion
+     → gateway région B
+→ hub destination
+→ distribution locale
+→ GPS B
+
+
+Réseau :
+
+40 hubs
+
+5 régions
+
+10 gateways
+
+
+Gateways :
+
+Paris
+Londres
+
+New York
+Los Angeles
+
+Lagos
+Nairobi
+
+Tokyo
+Singapour
+
+Istanbul
+Dubaï
+
+
+Toutes les variations :
+
+déterministes grâce au messageId.
+
+
+Tout le voyage :
+
+calculé une seule fois au moment de l'envoi.
+
+
+La timeline :
+
+sauvegardée en base.
+
+
+L'application :
+
+utilise la timeline pour afficher
+où se trouve actuellement le message.
+
+
+======================================================================
+FIN DE LA SPÉCIFICATION
+======================================================================
