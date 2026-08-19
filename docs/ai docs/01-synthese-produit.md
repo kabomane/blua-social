@@ -1,79 +1,131 @@
 # Synthèse produit — Blue Atmosphere
 
-Condensé opérationnel des 4 docs de conception. Source de vérité : `docs/*.txt`.
+Dernière consolidation : 2026-08-19. Source de vérité : `docs/*.txt`.
 
-## Concept
+## Promesse
 
-Réseau social géographique **asynchrone** : tout message est matérialisé par un
-transport (oiseau ou poste) qui voyage réellement. Le destinataire ne voit rien
-avant l'arrivée. Positionnement : « Un réseau social où les messages voyagent
-vraiment. »
+Blue Atmosphere est un réseau social géographique et asynchrone où chaque
+message doit voyager. Le contenu existe dès l'envoi, mais personne d'autre que
+l'expéditeur ne peut le voir avant son arrivée autorisée par le backend.
 
-## Les 3 espaces
+La boucle à valider en Beta 1 est : découvrir → participer → envoyer → attendre
+→ recevoir → répondre → créer un lien → revenir.
 
-| Espace | Rôle | Équivalent |
+## Espaces et graphe social
+
+| Espace | Audience | Transport |
 |---|---|---|
-| **Home** | publications des abonnements + échos de branches (découverte) | timeline personnelle |
-| **Branches** | communautés attachées à une position GPS **immuable** | subreddit + lieu numérique |
-| **Cui-to-cui** | conversation privée 1:1 | DM |
+| Home | abonnés unilatéraux éligibles au début de la diffusion + échos de branches | auteur → hub, puis broadcast V3 |
+| Branches | membres éligibles lorsque le message atteint la branche | auteur → coordonnées immuables de la branche, puis broadcast V3 |
+| Cui-to-cui | un ami réciproque unique | delivery directe temporaire |
 
-## Règles sociales clés
+- Un follow est **unilatéral** : si A suit B, A reçoit les notes Home de B,
+  même si B ne suit pas A.
+- L'amitié est dérivée de deux follows actifs réciproques. Elle débloque le
+  cui-to-cui ; un follow simple ne donne jamais accès aux messages privés.
+- Un unfollow retire la réception des futures notes de la personne qui n'est
+  plus suivie. Si la réciprocité disparaît, le cui-to-cui n'accepte plus de
+  nouvel envoi, sans supprimer les messages Direct déjà arrivés.
+- Aucun like, compteur public de popularité, trending opaque ou compte
+  influenceur.
+- Répondre et transmettre sont des actions de communication qui consomment une
+  capacité. Une transmission crée un nouveau trajet ; elle n'est jamais un
+  multicast gratuit.
+- Les messages entrants et leur contenu restent invisibles avant l'arrivée.
+  Les trajets sortants sont consultables par leur expéditeur.
 
-- **Abonnements unilatéraux** : Home reçoit les comptes suivis. Deux
-  abonnements réciproques créent une amitié, requise pour le cui-to-cui.
-  Pas de likes, de compteurs publics de popularité ou de trending.
-- L'interaction principale est **répondre** (coûte un pigeon).
-- **Transmission** (repost) : consomme un pigeon, propagation réelle de
-  proche en proche — pas de multicast gratuit.
-- 1 post Home = 1 action d'envoi : auteur → hub le plus proche, puis une
-  livraison distincte du hub vers chaque abonné. Chaque abonné reçoit donc à un
-  moment différent ; le pigeon/slot de l'auteur est libéré à son arrivée au hub.
-- **Pigeons entrants invisibles** : surprise à l'arrivée, jamais de
-  « un message arrive dans 17 min ». Les pigeons **sortants** sont visibles.
-- Quota de branches publiques possédées (~3) ; propriété transférable ;
-  une branche publique active survit à son créateur.
-- Pas de pay-to-win : la monétisation ne touche jamais la capacité pigeon.
-- Vie privée : jamais de coordonnées exactes d'utilisateur exposées —
-  afficher « Paris », pas une lat/lon.
+## Livraison V3
 
-## Moteur de livraison (send method.txt)
+Un message est stocké une seule fois. Une delivery représente seulement un
+trajet physique unique : auteur → utilisateur, auteur → branche, ou auteur →
+hub Home.
 
-Deux méthodes opposées, toutes deux **déterministes** (seed = messageId) et
-calculées **une seule fois à l'envoi** :
+Home et Branch ne créent aucune delivery par destinataire. Après l'arrivée au
+hub ou à la branche, un `broadcast` est créé. Le backend :
 
-### BIRD (rouge-gorge, MVP)
-- Trajet direct A→B, ignore hubs/horaires/week-ends, sauf publication Home :
-  auteur→hub puis hub→chaque ami (relais immédiat).
-- distance effective = Haversine × 1.10.
-- Vitesse : **40-60 km/h, distribution triangulaire centrée 50**
-  (2 tirages seedés `msgId:speed:1` / `:speed:2`, moyenne × 20 + 40)
-  — c'est l'update qui remplace l'ancien 45 km/h ± 8 %.
-- 8 h de vol / jour, 16 h de repos (pas de repos final inutile).
-- Rapide en local (~6 h Lille→Londres), très lent au long cours
-  (~29 j Lille→Tokyo).
+1. vérifie l'éligibilité historique à `distribution_started_at` ;
+2. autorise immédiatement si le broadcast est settled ou si le bit est posé ;
+3. sinon calcule l'arrivée virtuelle vers la dernière position connue ;
+4. pose atomiquement le bit reçu dans un chunk de 512 bits si l'heure est
+   atteinte ;
+5. ne renvoie jamais le contenu avant cette autorisation.
 
-### POST
-- Infrastructure : **40 hubs, 5 régions, 10 gateways** (données dans le doc).
-- Route : hub le plus proche → (gateways si changement de région) → hub
-  destination ; doublons adjacents supprimés.
-- Collecte 2-6 h, transport local max(d/65, 2 h), traitement hub 5-12 h
-  (gateway 8-16 h), horaires 06-22, samedi 08-16 à 50 %, dimanche fermé.
-- Transports : GROUND 75 (<500 km), FAST_GROUND 120 (500-1500), PLANE 750
-  (>1500 km ou inter-région), avec fréquences de départ (4/6/8/12 h).
-- Lente en local (~1-2 j), efficace au long cours (~4-6 j Lille→Tokyo).
-- Pas de random artificiel supplémentaire : la logistique EST la variation.
+Les slots Home et Branch sont stables et jamais réutilisés. Pour Home,
+l'éligibilité historique dépend du follow abonné → auteur existant au début de
+la diffusion, pas d'une amitié réciproque. Après `settled_at`, les chunks
+temporaires sont purgés, mais les périodes historiques restent.
 
-La **timeline complète** est sauvegardée ; l'état courant = timeline + now.
+Un Direct conserve son droit de lecture dans `messages.available_at`, même
+après purge opportuniste de sa delivery détaillée.
 
-## MVP (V0)
+## Moyens de transport
 
-Compte, localisation précise, abonnements, amitié dérivée, pigeons limités,
-Home abonnements, branches
-publiques géolocalisées, envoi branche, cui-to-cui, délais par distance,
-réponses, notifications d'arrivée, exploration simple.
-**Hors MVP** : collection d'oiseaux, carte 3D, algos complexes, reposts
-sophistiqués, modération avancée.
+### Pigeon / BIRD
 
-Hypothèse critique à valider : la boucle
-ouvrir → découvrir → envoyer → attendre → recevoir → répondre → revenir
-est-elle plaisante ?
+- Haversine × 1,10 ;
+- vitesse déterministe triangulaire entre 40 et 60 km/h, centrée sur 50 ;
+- seeds incluant message, destination et étape ;
+- 8 h de vol puis 16 h de repos, sans repos final inutile ;
+- vitesse et timeline sauvegardées pour tout trajet physique fixe.
+
+### Lettre / POST
+
+- 40 hubs, 5 régions, 10 gateways ;
+- collecte, trajet local, traitement, horaires, samedi ralenti, dimanche fermé,
+  départs périodiques, transport terrestre/rapide/aérien et distribution finale ;
+- aucune variation artificielle supplémentaire : la logistique déterministe
+  produit déjà les écarts ;
+- timeline complète et route sauvegardées.
+
+Chaque compte possède 5 slots pigeon et 5 slots lettre. La ressource de
+l'auteur est rendue à l'arrivée du premier trajet physique, pas à la fin du
+broadcast.
+
+## Branches
+
+- Position GPS immuable après création ; coordonnées exactes privées.
+- Publiques ou privées selon le périmètre finalement retenu pour la Beta 1.
+- Adhésion historisée, rôles OWNER/MODERATOR/MEMBER, slots stables.
+- Quota de création, transfert de propriété, archivage plutôt que destruction
+  d'une communauté active, découverte par proximité/activité/liens explicables.
+- Modération minimale nécessaire : règles, signalement, suppression logique,
+  suspension/ban et nomination de modérateurs.
+
+## Vie privée et sécurité produit
+
+- Position exacte disponible uniquement côté serveur ; l'UI affiche une ville.
+- Localisation initialisée à l'inscription puis redemandée au premier plan au
+  plus une fois toutes les 24 h. Aucun suivi GPS d'arrière-plan.
+- Blocage, rate limiting, signalement, anti-bot et modération complètent la
+  rareté naturelle des moyens d'envoi.
+- Pas de pay-to-win sur la capacité de transport.
+
+## Découverte, UX et contenu
+
+- Sans ami, l'utilisateur découvre des branches publiques proches et peut
+  accomplir un premier envoi pendant l'onboarding.
+- Home paginée : messages des comptes suivis réellement arrivés + échos explicables de
+  branches. Pas de scroll frénétique ni contenu en vol révélé.
+- Écrans attendus : onboarding, Home, composer, Branches/Explorer, détail de
+  branche, Cui-to-cui, conversation/réponses, Arrivées, trajets sortants et
+  carte de suivi, Profil, Signets, Paramètres.
+- Navigation mobile actuelle : Home, deux raccourcis configurables et bouton
+  Paramètres. Le menu est une pile de bulles ouverte uniquement par ce bouton;
+  il assombrit la page et verrouille son défilement.
+
+## Portes publiques et SEO
+
+Les routes publiques fixes, branches publiques et éventuellement profils
+explicitement publics doivent être rendus côté serveur avec vrais statuts HTTP,
+canonical, Open Graph, robots et sitemap. L'API et le SSR partagent exactement
+les mêmes fonctions de visibilité. Home, Directs, Arrivées et Paramètres sont
+toujours `noindex`.
+
+## Hors cible automatique
+
+Les idées listées comme « plus tard », « optionnelles » ou questions ouvertes
+ne deviennent pas automatiquement des exigences Beta 1 : collection étendue
+d'oiseaux, carte 3D, vidéos/pièces jointes, recherche plein texte, monétisation,
+statistiques publiques, branches privées avancées ou modération communautaire
+complexe. Elles nécessitent une décision produit explicite dans la phase 0 de
+la roadmap.

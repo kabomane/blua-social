@@ -22,6 +22,9 @@
 // voyages distincts : elles ne prolongent jamais ce busy_until.
 
 import type { GeoPoint } from './haversine.js'
+import { distanceKm } from './haversine.js'
+import { seededRandom } from './seeded-random.js'
+import { DELIVERY_RULES } from './rules.js'
 
 export interface BirdDeliveryResult {
   method: 'BIRD'
@@ -36,10 +39,31 @@ export interface BirdDeliveryResult {
 }
 
 export function calculateBirdDelivery(
-  _sender: GeoPoint,
-  _receiver: GeoPoint,
-  _messageId: string,
-  _sentAt: number,
+  sender: GeoPoint,
+  receiver: GeoPoint,
+  messageId: string,
+  sentAt: number,
 ): BirdDeliveryResult {
-  throw new Error('Not implemented — voir docs/send method.txt §46 (BIRD)')
+  const rules = DELIVERY_RULES.bird
+  const distanceGpsKm = distanceKm(sender, receiver)
+  const effectiveDistanceKm = distanceGpsKm * rules.routeFactor
+  const normalized = (seededRandom(`${messageId}:speed:1`) + seededRandom(`${messageId}:speed:2`)) / 2
+  const effectiveSpeedKmH = Math.round((rules.minSpeedKmH + normalized * (rules.maxSpeedKmH - rules.minSpeedKmH)) * 10) / 10
+  const flightHours = effectiveDistanceKm / effectiveSpeedKmH
+  const wholeDays = Math.floor(flightHours / rules.flightHoursPerDay)
+  const remainingHours = flightHours % rules.flightHoursPerDay
+  const calendarHours = remainingHours === 0
+    ? Math.max(0, wholeDays - 1) * 24 + rules.flightHoursPerDay
+    : wholeDays * 24 + remainingHours
+  return {
+    method: 'BIRD',
+    birdId: 'ROBIN',
+    distanceGpsKm,
+    effectiveDistanceKm,
+    effectiveSpeedKmH,
+    flightHours,
+    calendarHours,
+    sentAt,
+    estimatedDeliveryAt: sentAt + Math.ceil(calendarHours * 3600),
+  }
 }

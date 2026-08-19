@@ -5,7 +5,7 @@ const WIDTH = 800;
 const HEIGHT = 450;
 const countryPalette = ["#234449", "#284D4C", "#203F45", "#2B504E", "#24484A"];
 
-const countriesPromise = fetch("/data/countries-110m.geojson").then((response) => {
+const countriesPromise = fetch("/api/map/countries").then((response) => {
   if (!response.ok) throw new Error("Natural Earth countries unavailable");
   return response.json();
 });
@@ -29,7 +29,7 @@ function clamp(value, minimum, maximum) {
   return Math.min(Math.max(value, minimum), maximum);
 }
 
-export default function MappyPlanisphere({ msg, state, distance, interactive = false, expanded = false }) {
+export default function MappyPlanisphere({ msg, state, distance, interactive = false, expanded = false, showDistance = true }) {
   const [countries, setCountries] = useState([]);
   const [viewport, setViewport] = useState({ x: 0, y: 0, k: 1 });
   const svgRef = useRef(null);
@@ -206,9 +206,9 @@ export default function MappyPlanisphere({ msg, state, distance, interactive = f
           )}
         </g>
       </svg>
-      <div className="mappy-distance">
+      {showDistance && <div className="mappy-distance">
         {Math.round(distance).toLocaleString("fr-FR")} KM · {msg.method === "BIRD" ? "VOL DIRECT" : `${Math.max(nodes.length - 1, 1)} ÉTAPES`}
-      </div>
+      </div>}
     </div>
   );
 }

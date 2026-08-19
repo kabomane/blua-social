@@ -1034,6 +1034,24 @@ Différences avec une messagerie instantanée :
 - pas de pression de réponse immédiate ;
 - possibilité de ne pas savoir qu'un message arrive.
 
+Cycle de données :
+
+    message + delivery directe temporaire
+                |
+                v
+    arrivée calculée recopiée dans message.available_at
+                |
+                v
+    Bob peut lire lorsque available_at <= maintenant
+                |
+                v
+    purge différée de la delivery détaillée
+
+La delivery conserve seulement le voyage pendant qu'il est utile à l'animation
+et au suivi. Après purge, le message reste accessible uniquement à Bob grâce à
+recipient_user_id + available_at. Un cui-to-cui ne devient évidemment jamais
+lisible par « toute la Terre ».
+
 
 ================================================================================
 22. RÉPONSES AUX MESSAGES
@@ -1819,7 +1837,10 @@ Message {
     destination_latitude
     destination_longitude
 
-    delivery_id
+    available_at
+
+    delivery_id nullable
+        présent seulement tant que la delivery détaillée existe
 
     visibility_state
         preparing
@@ -3646,7 +3667,8 @@ La communication doit rester intentionnelle.
 
 [ ] possibilité de créer une branche n'importe où ou uniquement à sa position
 
-[ ] fonctionnement exact d'un post Home avec beaucoup d'amis
+[x] fonctionnement d'un post Home avec beaucoup d'amis : algorithme V3
+    (hub, broadcast, bitmap temporaire ; aucune delivery par ami)
 
 [ ] coût d'un repost
 
@@ -3850,4 +3872,75 @@ mais un réseau social dont :
     ET LA CAPACITÉ DE COMMUNICATION
 
 font directement partie du graphe social.
+
+
+================================================================================
+88. ADDENDUM IMPÉRATIF — DIFFUSION V3
+================================================================================
+
+Cette section remplace toute formulation antérieure où un message Home ou de
+branche serait directement livré à chaque membre par une delivery individuelle.
+
+Un message reste un seul contenu. Une delivery ne représente qu'un voyage
+physique vers une destination unique : auteur -> utilisateur en cui-to-cui,
+auteur -> branche, ou auteur -> hub pour un post Home.
+
+À l'arrivée dans une branche ou un hub, le backend crée un broadcast, pas N
+deliveries. Il mémorise temporairement les réceptions dans des fragments bitmap
+dont les slots sont stables et ne dépendent jamais de l'ordre des lignes de la
+base.
+
+BRANCHE
+--------
+
+    auteur -> branche géographique -> broadcast aux membres de l'époque
+
+Le premier trajet est fixe. Seuls les membres présents lorsque le message
+atteint la branche sont éligibles. Une personne qui rejoint ensuite ne voit pas
+les anciens messages. Le backend teste chaque membre lorsqu'il ouvre la branche
+et le déverrouille quand son délai calculé est atteint.
+
+HOME
+----
+
+    auteur -> hub le plus proche -> broadcast aux amis de l'époque
+
+Le hub est choisi par proximité. Pour le pigeon, il est un simple relais GPS,
+sans tri ni règles postales. Pour la lettre, il devient l'origine du trajet
+postal complet vers l'ami. L'auteur ne consomme qu'une action/pigeon ou un slot
+postal, rendu quand le premier trajet arrive au hub.
+
+LOCALISATION ET RÉCEPTION
+-------------------------
+
+La position utilisée pour un lecteur est sa dernière position connue côté
+serveur. Elle est initialisée à l'inscription et mise à jour au premier plan au
+plus une fois toutes les 24 heures ; il n'y a pas de suivi GPS continu.
+
+Si le bitmap indique déjà « reçu », le contenu demeure accessible, même après
+un déplacement ou une mise à jour de position. Sinon, le backend recalcule le
+délai depuis le point de diffusion vers cette dernière position. Pour un pigeon,
+la variation déterministe de vitesse doit inclure message_id et user_id.
+
+FIN DE PROPAGATION
+------------------
+
+Chaque broadcast possède settled_at, obtenu depuis une borne maximale mondiale
+versionnée par méthode. Après cette date, les bitmap chunks temporaires sont
+supprimés et les membres/amis historiquement éligibles peuvent accéder au
+message. Les nouveaux membres ou nouveaux amis restent exclus des anciens
+messages.
+
+Le client ne décide jamais seul du droit de lecture : il demande le feed ; le
+backend vérifie l'éligibilité, le délai et pose le bit atomiquement si besoin.
+
+Pour un cui-to-cui, il n'y a pas de bitmap ni de settled_at global. Une delivery
+directe temporaire est créée à l'envoi ; son heure d'arrivée est copiée dans
+message.available_at. Dès que l'arrivée est passée, le backend peut supprimer
+la delivery détaillée sans rendre le message inaccessible : le seul destinataire
+est autorisé par recipient_user_id + available_at.
+
+================================================================================
+FIN — ADDENDUM V3
+================================================================================
 ================================================================================

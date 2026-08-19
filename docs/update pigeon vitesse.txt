@@ -177,20 +177,20 @@ Exemple :
         MSG_A7291
 
 
-Créer deux seeds indépendantes :
+Créer deux seeds indépendantes avec la destination du calcul :
 
-    MSG_A7291:speed:1
+    MSG_A7291:TARGET_42:speed:1
 
-    MSG_A7291:speed:2
+    MSG_A7291:TARGET_42:speed:2
 
 
 Puis :
 
     random1 =
-        seededRandom("MSG_A7291:speed:1")
+        seededRandom("MSG_A7291:TARGET_42:speed:1")
 
     random2 =
-        seededRandom("MSG_A7291:speed:2")
+        seededRandom("MSG_A7291:TARGET_42:speed:2")
 
 
 Ainsi :
@@ -213,13 +213,13 @@ Un refresh ne doit jamais modifier :
 
 random1 =
     seededRandom(
-        messageId + ":speed:1"
+        messageId + ":" + targetId + ":speed:1"
     )
 
 
 random2 =
     seededRandom(
-        messageId + ":speed:2"
+        messageId + ":" + targetId + ":speed:2"
     )
 
 
@@ -238,19 +238,19 @@ effectiveSpeedKmH =
 6. EXEMPLE JAVASCRIPT / TYPESCRIPT
 ================================================================================
 
-function calculateBirdSpeed(messageId) {
+function calculateBirdSpeed(messageId, targetId) {
 
     const MIN_SPEED = 40;
     const MAX_SPEED = 60;
 
     const r1 =
         seededRandom(
-            `${messageId}:speed:1`
+            `${messageId}:${targetId}:speed:1`
         );
 
     const r2 =
         seededRandom(
-            `${messageId}:speed:2`
+            `${messageId}:${targetId}:speed:2`
         );
 
     const normalized =
@@ -269,7 +269,7 @@ function calculateBirdSpeed(messageId) {
 
 Exemple de résultat :
 
-    calculateBirdSpeed("MSG_A7291")
+    calculateBirdSpeed("MSG_A7291", "TARGET_42")
 
     →
 
@@ -574,7 +574,7 @@ BIRD_SPEED = {
 
     deterministic: true,
 
-    seedSource: "messageId",
+    seedSource: "messageId + targetId",
 
     precisionKmH: 0.1
 
@@ -583,9 +583,9 @@ BIRD_SPEED = {
 
 FORMULE :
 
-    r1 = seededRandom(messageId + ":speed:1")
+    r1 = seededRandom(messageId + ":" + targetId + ":speed:1")
 
-    r2 = seededRandom(messageId + ":speed:2")
+    r2 = seededRandom(messageId + ":" + targetId + ":speed:2")
 
     normalized = (r1 + r2) / 2
 
@@ -598,6 +598,29 @@ RÉSULTAT :
 
     avec une concentration autour de 50 km/h.
 
+
+================================================================================
+13. PRÉCISION OBLIGATOIRE — DIFFUSION V3
+================================================================================
+
+targetId désigne la destination réelle du calcul :
+
+- pour un cui-to-cui : recipientUserId ;
+- pour une diffusion Home ou branche V3 évaluée à la lecture : recipientUserId ;
+- pour le trajet physique auteur -> hub ou auteur -> branche : l'identifiant du
+  hub ou de la branche.
+
+Ainsi deux amis d'un même post Home ne reçoivent pas artificiellement le même
+pigeon logique à la même vitesse. Leur arrivée peut différer selon distance,
+dernière position connue et seed propre à chacun.
+
+Pour une diffusion V3, cette vitesse n'est pas enregistrée dans une delivery
+individuelle. Elle est calculée par le backend seulement tant que le bit reçu de
+l'utilisateur vaut 0. Après la première réception autorisée, le bitmap prévaut
+et le message ne peut jamais disparaître à cause d'une nouvelle position GPS.
+
+Pour les deliveries physiques ordinaires, le comportement précédent demeure :
+vitesse et timeline sont calculées une fois à l'envoi et sauvegardées.
 
 ================================================================================
 FIN DE L'UPDATE

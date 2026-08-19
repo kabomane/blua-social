@@ -4254,7 +4254,11 @@ DELIVERY_RULES
 
 RÈGLE 1
 
-L'oiseau ne passe JAMAIS par les hubs.
+L'oiseau ne passe JAMAIS par les hubs pour un trajet direct classique.
+
+Exception V3 : pour un post Home, le seul trajet physique de l'auteur est
+auteur -> hub Home le plus proche. Après cette arrivée, le hub est un relais
+GPS immédiat et la diffusion utilise le broadcast V3, sans trajet postal.
 
 
 RÈGLE 2
@@ -4301,17 +4305,23 @@ Tous les calculs géographiques utilisent Haversine.
 RÈGLE 10
 
 Tous les randoms importants utilisent une seed basée sur messageId.
+Pour une vitesse pigeon, inclure aussi targetId : messageId + targetId.
 
 
 RÈGLE 11
 
-Une fois le voyage généré,
+Une fois un voyage physique généré,
 il ne change plus.
+
+Exception V3 : le calcul d'un broadcast vers un utilisateur dont le bit reçu
+vaut 0 est évalué à la lecture avec sa dernière position connue. Dès que le
+backend pose le bit, cette réception est définitivement acquise.
 
 
 RÈGLE 12
 
-estimatedDeliveryAt est calculé au moment de l'envoi.
+estimatedDeliveryAt est calculé au moment de l'envoi pour une delivery
+physique. Dans un broadcast V3, l'arrivée individuelle n'est pas stockée.
 
 
 RÈGLE 13
@@ -4448,6 +4458,54 @@ L'application :
 utilise la timeline pour afficher
 où se trouve actuellement le message.
 
+
+======================================================================
+49. INTÉGRATION OBLIGATOIRE — DIFFUSION V3
+======================================================================
+
+Ce moteur sert aussi au broadcast V3. Cette règle prévaut sur toute ancienne
+interprétation qui créerait une delivery par membre de Home ou de branche.
+
+TRAJETS PHYSIQUES FIXES
+-----------------------
+
+- cui-to-cui : expéditeur -> destinataire ;
+- branche : expéditeur -> coordonnées immuables de la branche ;
+- Home : expéditeur -> hub le plus proche.
+
+Ces trajets sont calculés et enregistrés une fois à l'envoi selon les règles
+normales du pigeon ou de la poste.
+
+Pour le cui-to-cui, la delivery directe détaillée est temporaire. Son heure
+d'arrivée est copiée à l'envoi dans messages.available_at ; après l'arrivée, le
+backend autorise uniquement recipient_user_id quand available_at <= now. La
+delivery peut donc être purgée de façon différée sans supprimer le message ni
+son droit de lecture. Cette règle ne s'applique pas à un broadcast : un direct
+ne possède ni bitmap ni état « arrivé pour toute l'audience ».
+
+DIFFUSION APRÈS ARRIVÉE
+-----------------------
+
+Quand le message atteint une branche ou le hub Home, créer un broadcast. Le
+broadcast fournit origine, méthode, distribution_started_at et settled_at, mais
+ne crée pas de delivery utilisateur.
+
+Lorsqu'un destinataire éligible ouvre la Home ou la branche, le BACKEND calcule
+le trajet virtuel depuis cette origine vers sa dernière position connue :
+
+- PIGEON : distance directe ; le hub Home est seulement un relais GPS. La seed
+  de vitesse est messageId + recipientUserId, pas messageId seul ;
+- POSTE : appliquer la chaîne postale complète depuis l'origine (hub ou
+  branche) jusqu'à cette position.
+
+Si now atteint l'arrivée calculée, le backend pose atomiquement son bit reçu et
+retourne le message. Si le bit vaut déjà 1, le message reste retourné sans
+recalcul. Le bit n'est pas un accusé de lecture.
+
+La position est mise à jour au premier plan au plus une fois toutes les 24 h,
+sans GPS continu. settled_at est une borne mondiale configurée par méthode ; à
+son arrivée, les bitmaps temporaires peuvent être purgés et les personnes qui
+étaient éligibles à distribution_started_at ont accès au message.
 
 ======================================================================
 FIN DE LA SPÉCIFICATION

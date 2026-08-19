@@ -36,6 +36,49 @@
   }
 }
 
+/* Réserve la place de la navigation flottante uniquement sur mobile. */
+.mobile-nav-safe-padding {
+  padding-bottom: calc(66px + max(12px, env(safe-area-inset-bottom)) + 24px);
+}
+
+/* Menu mobile : chaque pilule naît ronde au-dessus du bouton puis s'ouvre vers la gauche. */
+@keyframes mobile-menu-bubble {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scaleX(.23);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(0) scaleX(.23);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scaleX(1);
+  }
+}
+
+.mobile-menu-bubble {
+  animation: mobile-menu-bubble 380ms cubic-bezier(.2, .85, .25, 1) both;
+  animation-delay: var(--bubble-delay, 0ms);
+}
+
+/* Mappy est limité aux cartes de suivi: aucune règle de thème globale. */
+.mappy-globe { position: relative; height: 100%; width: 100%; overflow: hidden; }
+.mappy-globe svg { display: block; height: 100%; width: 100%; }
+.mappy-distance { position: absolute; right: .6rem; bottom: .55rem; border-radius: 9999px; background: rgb(6 29 47 / .78); padding: .2rem .45rem; color: white; font-size: .625rem; font-weight: 700; letter-spacing: .04em; }
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-menu-bubble {
+    animation: none;
+  }
+}
+
+@media (min-width: 1100px) {
+  .mobile-nav-safe-padding {
+    padding-bottom: 1.5rem;
+  }
+}
+
 /* pigeon qui traverse l'écran (auth, gauche) */
 @keyframes cross {
   from { transform: translateX(-60px); }

@@ -1,0 +1,275 @@
+================================================================================
+BLUE ATMOSPHERE — SEO AVEC REACT, VITE ET EXPRESS
+================================================================================
+
+STATUT : RÈGLE D'ARCHITECTURE POUR LES IA QUI CODENT LE PROJET
+
+
+================================================================================
+1. OBJECTIF
+================================================================================
+
+Blue Atmosphere utilise :
+
+    React + Vite côté interface
+    Express côté serveur/API
+    PostgreSQL côté production
+
+Le but n'est PAS de rendre toute l'application indexable par Google.
+
+Le but est de rendre les portes d'entrée publiques faciles à découvrir, sans
+exposer les données privées, les positions ou les messages non encore arrivés.
+
+
+================================================================================
+2. SSR : DÉFINITION
+================================================================================
+
+SSR signifie Server-Side Rendering.
+
+Une SPA React classique envoie d'abord essentiellement :
+
+    <div id="root"></div>
+    <script src="app.js"></script>
+
+Le navigateur construit ensuite la page avec JavaScript.
+
+Avec SSR, Express exécute React côté serveur pour les routes publiques et
+envoie directement le HTML utile :
+
+    <h1>London Cinema Club</h1>
+    <p>Discussion publique sur le cinéma...</p>
+
+Le navigateur charge ensuite le JavaScript React et hydrate la page : elle
+reste interactive exactement comme une page React normale.
+
+SSR bénéficie à Google ET aux utilisateurs : premier contenu visible plus tôt,
+partages de liens plus propres et page publique compréhensible sans dépendre du
+JavaScript du navigateur.
+
+
+================================================================================
+3. VITE + EXPRESS EN PRODUCTION
+================================================================================
+
+Express ne lance PAS un build Vite à chaque visite.
+
+Au déploiement, Vite produit deux sorties :
+
+    dist/client/
+        JavaScript, CSS et assets destinés au navigateur
+
+    dist/server/
+        application React exécutable par Express pour le SSR
+
+À chaque requête d'une page publique :
+
+    navigateur ou Google
+        -> Express
+        -> lecture PostgreSQL des seules données publiques et accessibles
+        -> React renderToString / renderToPipeableStream
+        -> HTML complet avec <head>
+        -> navigateur hydrate avec dist/client
+
+En développement, Vite peut servir les modules et le SSR à chaud. En
+production, Express utilise uniquement les bundles déjà construits.
+
+
+================================================================================
+4. ROUTES À INDEXER ET ROUTES À EXCLURE
+================================================================================
+
+Routes SSR + indexables :
+
+    /
+    /about
+    /how-it-works
+    /branches
+    /branches/:slug             uniquement si branche publique
+    /u/:username                uniquement si profil explicitement public
+    /legal/*
+
+Routes SPA privées ou non pertinentes pour Google :
+
+    /home
+    /messages
+    /notifications
+    /settings
+    /onboarding
+    /branches/:slug             si branche privée
+    /search                     si résultat personnalisé ou pauvre
+
+Ces pages privées doivent renvoyer :
+
+    <meta name="robots" content="noindex, nofollow">
+
+Elles ne doivent jamais apparaître dans sitemap.xml.
+
+
+================================================================================
+5. RÈGLE ABSOLUE DE VISIBILITÉ
+================================================================================
+
+Le SSR applique exactement les mêmes règles d'accès que l'API.
+
+Une branche publique peut seulement afficher dans son HTML :
+
+- les messages réellement accessibles publiquement ;
+- jamais un cui-to-cui ;
+- jamais une Home personnelle ;
+- jamais une branche privée ;
+- jamais un message encore en vol selon l'algorithme Blue Atmosphere ;
+- jamais latitude/longitude exacte d'un utilisateur.
+
+Le bot Google est un visiteur non authentifié. Il ne reçoit aucune exception.
+
+
+================================================================================
+6. CANONICAL
+================================================================================
+
+Canonical = URL officielle d'une page.
+
+Exemple :
+
+    https://blueatmosphere.com/branches/london-cinema-club
+    https://blueatmosphere.com/branches/london-cinema-club?utm_source=instagram
+    https://blueatmosphere.com/branches/london-cinema-club/
+
+Ces variantes peuvent afficher le même contenu. Le SSR doit écrire dans le
+HTML initial :
+
+    <link rel="canonical"
+          href="https://blueatmosphere.com/branches/london-cinema-club">
+
+Le canonical indique aux moteurs de recherche quelle URL indexer. Il n'est pas
+une redirection et n'est pas visible par l'utilisateur.
+
+
+================================================================================
+7. METADATA PAR PAGE PUBLIQUE
+================================================================================
+
+Le serveur génère les données dans <head> avant d'envoyer le HTML.
+
+Exemple branche :
+
+    <title>London Cinema Club — Blue Atmosphere</title>
+    <meta name="description"
+          content="Public conversations travelling through Blue Atmosphere.">
+    <link rel="canonical" href="https://blueatmosphere.com/branches/london-cinema-club">
+
+    <meta property="og:title" content="London Cinema Club — Blue Atmosphere">
+    <meta property="og:description"
+          content="A public branch on Blue Atmosphere.">
+    <meta property="og:image" content="https://.../branch-cover.jpg">
+
+Open Graph n'est pas du référencement Google direct ; il sert aux aperçus
+Discord, iMessage, WhatsApp, X, etc.
+
+Ne pas utiliser de meta keywords : Google ne les utilise pas pour classer une
+page.
+
+
+================================================================================
+8. ROBOTS.TXT ET SITEMAP.XML
+================================================================================
+
+Servir :
+
+    GET /robots.txt
+    GET /sitemap.xml
+
+robots.txt annonce sitemap.xml et laisse crawler les pages publiques.
+
+sitemap.xml est généré depuis PostgreSQL et contient seulement les URLs
+canoniques indexables : pages fixes, branches publiques et profils publics.
+
+Chaque URL dynamique possède idéalement :
+
+    <loc>URL canonique</loc>
+    <lastmod>date de dernière modification publique</lastmod>
+
+Un changement de contenu privé ne doit pas modifier le sitemap.
+
+
+================================================================================
+9. STRUCTURED DATA JSON-LD
+================================================================================
+
+Ajouter JSON-LD uniquement quand il décrit un contenu réel rendu dans la page.
+
+Utilisations possibles :
+
+- Organization pour Blue Atmosphere ;
+- ProfilePage pour un profil réellement public ;
+- DiscussionForumPosting pour un message public de branche, si les messages
+  publics sont volontairement indexables.
+
+Ne jamais générer de JSON-LD pour du contenu caché, privé ou non accessible.
+
+
+================================================================================
+10. HTTP ET ERREURS
+================================================================================
+
+Express doit renvoyer les vrais statuts HTTP :
+
+    200  page publique existante
+    301  ancienne URL -> URL canonique si nécessaire
+    404  branche inexistante ou supprimée
+    403/404 branche privée vue sans droit, sans révéler son contenu
+
+Ne jamais répondre 200 avec la SPA générique pour une vraie page inexistante.
+
+
+================================================================================
+11. ARCHITECTURE DE CODE CONSEILLÉE
+================================================================================
+
+client/
+    entry-client.tsx
+    App.tsx
+
+server/
+    entry-server.tsx
+    render-public-page.tsx
+    seo.ts
+
+express/
+    public-routes.ts
+    api-routes.ts
+    sitemap.ts
+    robots.ts
+
+Le SSR et l'API doivent partager les mêmes fonctions métier de visibilité.
+Ne pas réécrire les règles de message dans deux endroits différents.
+
+
+================================================================================
+12. CE QU'IL NE FAUT PAS FAIRE
+================================================================================
+
+- ne pas migrer vers Next.js uniquement pour le SEO ; Vite + Express suffit ;
+- ne pas faire de rendu spécial réservé aux bots ;
+- ne pas indexer Home, cui-to-cui, notifications ou réglages ;
+- ne pas laisser le client seul ajouter title/canonical pour les pages SEO ;
+- ne pas exposer un message avant son arrivée effective ;
+- ne pas inclure les routes privées dans sitemap.xml ;
+- ne pas dupliquer les règles de permissions entre API et SSR.
+
+
+================================================================================
+13. ORDRE D'IMPLÉMENTATION
+================================================================================
+
+1. Construire l'application SPA normalement.
+2. Créer les pages publiques fixes en HTML pré-rendu ou SSR.
+3. Ajouter robots.txt, sitemap.xml et Google Search Console.
+4. Ajouter le SSR aux branches publiques.
+5. Ajouter les profils publics seulement si ce choix produit est confirmé.
+6. Ajouter JSON-LD après validation des pages publiques.
+
+================================================================================
+FIN
+================================================================================

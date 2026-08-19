@@ -3,6 +3,8 @@ export interface User {
   email: string | null
   username: string
   city: string | null
+  locationCheckedAt: number | null
+  avatarUrl: string | null
 }
 
 async function post(path: string, body: unknown): Promise<User> {
@@ -30,6 +32,28 @@ export const register = (payload: RegisterPayload) =>
 
 export const login = (email: string, password: string) =>
   post('/api/auth/login', { email, password })
+
+export async function updateLocation(userId: string, latitude: number, longitude: number): Promise<User> {
+  const res = await fetch('/api/auth/location', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId, latitude, longitude, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error ?? 'Impossible de mettre à jour la localisation.')
+  return data.user as User
+}
+
+export async function uploadAvatar(userId: string, file: File): Promise<User> {
+  const res = await fetch('/api/auth/avatar', {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type, 'X-User-Id': userId },
+    body: file,
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error ?? 'Impossible d’enregistrer cette photo.')
+  return data.user as User
+}
 
 async function check(path: string): Promise<boolean> {
   const res = await fetch(path)

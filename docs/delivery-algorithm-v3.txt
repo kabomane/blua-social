@@ -1,0 +1,234 @@
+================================================================================
+BLUE ATMOSPHERE — ALGORITHME DE DIFFUSION V3
+================================================================================
+
+STATUT : RÈGLE DE RÉFÉRENCE À IMPLÉMENTER
+
+Objectif : garder un seul contenu par message, éviter les N deliveries pour N
+destinataires, conserver une réception géographique crédible et ne pas exiger
+de suivi GPS continu.
+
+================================================================================
+1. PROBLÈME RÉSOLU
+================================================================================
+
+Ne jamais créer une ligne de delivery par destinataire pour une Home ou une
+branche. Un message destiné à 100 000 personnes ne doit pas créer 100 000
+lignes de delivery ni 100 000 copies du message.
+
+Une delivery reste pertinente uniquement pour un trajet physique unique :
+
+- auteur -> utilisateur pour le cui-to-cui ;
+- auteur -> branche pour un message de branche ;
+- auteur -> hub pour un post Home.
+
+Après l'arrivée au point fixe (branche ou hub), la suite est un broadcast V3.
+
+CAS PARTICULIER : CUI-TO-CUI
+-----------------------------
+
+Le cui-to-cui crée bien une delivery directe temporaire, de la dernière
+position connue de l'expéditeur à celle du destinataire au moment de l'envoi.
+Son résultat définit immédiatement messages.available_at. Avant cette heure, le
+destinataire ne voit pas le contenu ; après, il le voit avec la condition :
+
+    message.recipient_user_id = lecteur.id
+    AND message.available_at <= now
+
+La delivery détaillée (timeline, distance, route, vitesse) peut être supprimée
+dès l'arrivée, par nettoyage différé. Le message garde available_at et reste
+accessible au seul destinataire ; aucune donnée « lisible par toute la Terre »
+n'existe pour un cui-to-cui.
+
+================================================================================
+2. LOCALISATION UTILISATEUR
+================================================================================
+
+La table users contient la dernière position connue :
+
+    latitude, longitude, location_checked_at
+
+À l'inscription, l'application demande la localisation pour initialiser cette
+position. Lorsqu'elle est ouverte au premier plan, elle la redemande seulement
+si le serveur constate :
+
+    now - location_checked_at >= 24 heures
+
+Pas de GPS en arrière-plan. location_checked_at est indépendant du jeton de
+connexion. Les coordonnées exactes ne sont jamais exposées à d'autres clients.
+
+================================================================================
+3. STRUCTURES À AJOUTER
+================================================================================
+
+friendship_periods
+------------------
+
+Historique d'amitié nécessaire pour la Home :
+
+    user_a_id, user_b_id, started_at, ended_at nullable
+
+Les IDs sont normalisés. Une amitié est éligible quand sa période couvre
+distribution_started_at. La table friendships active peut rester optimisée pour
+les requêtes courantes ; friendship_periods fait autorité pour l'historique.
+
+branch_membership_periods
+-------------------------
+
+Historique d'appartenance obligatoire pour les branches :
+
+    branch_id, user_id, slot_index, joined_at, left_at nullable, role
+
+slot_index est un entier stable attribué par branche. Il ne dépend jamais de
+l'ordre physique des lignes SQL et n'est jamais réutilisé. Un départ laisse un
+trou. Il indexe le bit du membre dans les bitmaps de cette branche.
+
+broadcasts
+----------
+
+Une ligne de diffusion par message arrivé à un point fixe :
+
+    id, message_id, audience_type (HOME ou BRANCH), origin_type,
+    origin_id, origin_lat, origin_lon, method, distribution_started_at,
+    settled_at
+
+origin_type vaut HUB pour Home, BRANCH pour une conversation de branche.
+
+broadcast_bitmap_chunks
+------------------------
+
+    broadcast_id, chunk_index, received_bits BLOB
+
+Un fragment contient exactement 512 bits (64 octets). Le bit vaut 1 quand le backend a
+accordé l'accès à ce compte. Une opération set-bit est atomique ; elle ne peut
+jamais écraser les bits des autres utilisateurs.
+
+Ce format réduit la contention : deux réceptions simultanées n'écrivent le même
+fragment que si leurs slots appartiennent au même groupe de 512 utilisateurs.
+
+    chunk_index = floor(slot_index / 512)
+    bit_index   = slot_index % 512
+
+Pour Home, le slot doit être stable pour la relation d'amitié (table dédiée ou
+slot déterministe de relation), jamais l'ordre d'une table. La table dédiée
+recommandée est : publisher_user_id, recipient_user_id, slot_index, assigned_at.
+Le slot est stable par auteur et n'est jamais réutilisé. Pour une branche, il
+s'agit de branch_membership_periods.slot_index.
+
+================================================================================
+4. BROADCAST D'UNE BRANCHE
+================================================================================
+
+1. L'auteur envoie le message vers les coordonnées immuables de la branche.
+   Une seule delivery physique est créée et son trajet est fixé à l'envoi.
+2. À branch_arrived_at, créer un broadcast BRANCH.
+3. Seuls les membres dont la période d'appartenance couvre branch_arrived_at
+   sont éligibles. Une personne qui rejoint après cette date ne voit pas les
+   anciens messages.
+4. Quand un membre ouvre la branche, le backend applique resolveAccess.
+5. Quand settled_at est atteint, le contenu est accessible pour tous les
+   membres éligibles de l'époque ; les bitmap chunks temporaires sont purgés.
+
+Un membre qui avait déjà obtenu le bit conserve l'accès même si une localisation
+mise à jour rendrait maintenant le délai théorique plus long. Le bit « reçu »
+n'est pas un bit « lu » et ne doit pas devenir un historique analytique.
+
+================================================================================
+5. BROADCAST HOME VIA HUB
+================================================================================
+
+1. L'auteur choisit le hub géographiquement le plus proche à l'envoi.
+2. Une seule delivery physique auteur -> hub est créée.
+3. À home_hub_arrived_at, créer un broadcast HOME, d'origine le hub.
+4. Les amis dont la relation existait au début de la diffusion sont éligibles.
+5. À l'ouverture de Home, le backend applique resolveAccess à chaque candidat.
+6. À settled_at, les bitmap chunks sont purgés et le post est disponible pour
+   les amis éligibles de l'époque.
+
+Pigeon : le hub est un relais GPS immédiat, sans traitement postal.
+Lettre : le calcul hub -> ami utilise le système postal complet.
+
+================================================================================
+6. RÉSOLUTION D'ACCÈS (BACKEND UNIQUEMENT)
+================================================================================
+
+function resolveAccess(broadcast, user, membershipOrFriendship) {
+    assert user est éligible à distribution_started_at;
+    recipientSlot = resolveStableSlot(broadcast, user, membershipOrFriendship);
+
+    if (now >= broadcast.settled_at) return ALLOW;
+    if (receivedBit(broadcast, recipientSlot) == 1) return ALLOW;
+
+    arrival = calculateArrival(
+        origin = broadcast.origin,
+        destination = user.last_known_location,
+        method = broadcast.method,
+        sentAt = broadcast.distribution_started_at,
+        seed = broadcast.message_id + ':' + user.id
+    );
+
+    if (now < arrival) return DENY_NOT_ARRIVED;
+    atomicallySetReceivedBit(broadcast, recipientSlot);
+    return ALLOW;
+}
+
+Le navigateur peut afficher une animation, mais n'obtient jamais le contenu
+avant ALLOW. La transaction qui pose le bit vérifie à nouveau l'éligibilité et
+ne modifie qu'un chunk très court.
+
+================================================================================
+7. CALCULS FIXES ET CALCULS À LA LECTURE
+================================================================================
+
+Fixé à l'envoi : contenu, auteur, méthode, delivery physique vers branche ou
+hub, arrival_at de cette première delivery, origine et heure du broadcast,
+settled_at.
+
+Calculé à la lecture tant que le bit vaut 0 : dernière position connue,
+arrivée virtuelle depuis l'origine du broadcast et seed pigeon message_id +
+user_id. Après la première autorisation, le bit fige la réception : on ne
+recalcule jamais pour retirer un message.
+
+================================================================================
+8. PURGE ET ARCHIVAGE
+================================================================================
+
+settled_at est déterminé à la création par une constante maximale versionnée
+par méthode, assez haute pour couvrir un pire trajet mondial.
+
+À settled_at : purger broadcast_bitmap_chunks ; conserver messages, broadcasts
+(ou une trace compacte settled_at) et les périodes d'amitié / membership utiles
+aux droits historiques ; ne jamais créer de nouvelles lignes individualisées.
+
+Après purge, l'accès se déduit de settled_at + l'éligibilité historique. Un
+nouveau membre de branche ou nouvel ami reste exclu des messages antérieurs au
+début de sa relation.
+
+================================================================================
+9. GARANTIES ET LIMITES ACCEPTÉES
+================================================================================
+
+- Une personne qui voyage sans ouvrir l'application garde temporairement son
+  ancienne position : il n'y a pas de tracking continu.
+- La mise à jour au plus toutes les 24 h limite les cas courants.
+- Si elle a déjà reçu le message, son bit évite une disparition après un
+  déplacement ou une nouvelle localisation.
+- Les cas extrêmes ne sont pas une promesse de position temps réel : c'est le
+  compromis explicite entre cohérence, vie privée et charge de base.
+
+================================================================================
+RÈGLES ABSOLUES
+================================================================================
+
+1. Un message = une ligne de contenu.
+2. Home et Branch = aucun fan-out de deliveries utilisateur.
+3. CUI-TO-CUI = delivery directe temporaire ; available_at reste dans message
+   après purge de la delivery.
+4. Le backend, jamais le client, décide l'accès et écrit le bitmap.
+5. Les coordonnées exactes restent privées.
+6. Les slots bitmap sont stables et ne dépendent jamais de l'ordre SQL.
+7. Les bitmaps sont temporaires ; l'éligibilité historique reste traçable.
+
+================================================================================
+FIN
+================================================================================

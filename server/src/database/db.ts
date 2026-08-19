@@ -15,7 +15,7 @@ fs.mkdirSync(DATA_DIR, { recursive: true })
 
 export const db: Database.Database = new Database(DB_PATH)
 
-// PRAGMA imposés par docs/blue atmosphere sqlite.txt
+// PRAGMA imposés par docs/b-atmos sqlite.txt
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
 db.pragma('busy_timeout = 5000')

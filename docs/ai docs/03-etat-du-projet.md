@@ -1,151 +1,137 @@
-# État du projet
+# État réel du projet
 
-Dernière mise à jour : 2026-08-15 (mockups + retours design + mappy)
+Dernier audit du code : 2026-08-19.
 
-## Graphe social (règle produit 2026-08-16)
+## Résumé
 
-- Abonnements unilatéraux : la Home reçoit les publications des comptes suivis.
-- Deux abonnements `ACCEPTED` réciproques créent une amitié ; le cui-to-cui est
-  réservé à cette relation.
-- Aucun compteur public d'abonnés, likes ou trending.
-- Transmission : nouvelle publication livrée aux abonnés du transmetteur via
-  le hub le plus proche.
-- Migration 005 : table `follows`. L'ancienne table `friendships` reste
-  seulement pour compatibilité historique et ne doit plus recevoir d'écriture.
+Le projet est un prototype UI authentifiable avec schéma SQLite préparé pour
+la diffusion V3. L'inscription et la connexion fonctionnent, mais il n'existe
+pas encore de session serveur. Home possède un premier envoi physique et quota
+serveur minimal; feed, réponses, transmissions, branches et notifications
+restent principalement des démonstrations locales.
 
-## Décisions design (retours utilisateur 2026-08-15)
+## Fonctionnel aujourd'hui
 
-Série Styles :
-- Mockup 1 (Ciel clair) : VALIDÉ — light mode.
-- Mockup 2 (Vol de nuit) : VALIDÉ — dark mode.
-- Mockup 3 (Courrier) : idée bonne, trop agressif — à adoucir si réutilisé.
-- Mockup 4 (Néo-brutaliste) : REJETÉ — pas assez réseau social.
+### Outillage et exécution
 
-Série Compositions :
-- Compo A (Carte-first) : REJETÉE.
-- Compo B (Perchoir/mail) : REJETÉE (trop boîte mail).
-- Compo C (Volière/TweetDeck) : à garder de côté — version TweetDeck prévue plus tard.
-- Compo D (Mobile) : REJETÉE.
-- Composition retenue : celle des mockups Styles (nav gauche / feed / pigeonnier),
-  à retravailler.
+- [x] React/Vite/TypeScript/Tailwind et Express/TypeScript configurés.
+- [x] Scripts racine `dev`, `dev:https`, `build`, `typecheck`, `db:migrate`.
+- [x] HTTPS local et exposition réseau pour tester la géolocalisation mobile.
+- [x] Build client et typecheck serveur opérationnels ; lint client disponible.
+- [ ] Aucun framework ni suite de tests automatisés.
+- [ ] Aucun pipeline CI/CD.
 
-Points produit ajoutés par l'utilisateur :
-- Pas que des pigeons : aussi des LETTRES (méthode POST de send method.txt),
-  en quantité limitée elle aussi. L'UI doit exposer les deux moyens d'envoi.
-- Module « mappy » (front-test/mappy/) : référence visuelle POUR LE SUIVI DES
-  ENVOIS. App React + d3-geo, planisphère Natural Earth, routes pointillées,
-  moteur BIRD/POST conforme à la spec. À garder comme référence.
-- Auth : mot de passe minimum 4 caractères, aucune autre contrainte.
-- Dark mode : NOIR PROFOND (base #060607 / panneaux #0e0e10 / bordures #232328),
-  pas de bleu marine. Le bleu reste uniquement couleur d'accent.
+### Base de données
 
-## Auth implémentée (2026-08-15)
+- [x] SQLite unique, WAL, foreign keys et busy timeout.
+- [x] Migrations 001–007 rejouables sur une base neuve.
+- [x] Tables de base : users, friendships, branches, memberships, messages,
+  deliveries, pigeon_actions, notifications.
+- [x] Structures V3 : friendship/branch membership periods, slots Home,
+  broadcasts, bitmap chunks, `messages.available_at`,
+  `users.location_checked_at`.
+- [x] Schéma vérifié sur la base locale et en mémoire.
+- [ ] Aucun code métier n'écrit ou ne lit encore les broadcasts/bitmaps.
+- [x] La migration 005/table `follows` correspond à la relation Home
+  unilatérale confirmée le 2026-08-19.
+- [ ] Le schéma V3 historise les amitiés mais pas encore chaque follow orienté ;
+  il faut ajouter `follow_periods` pour figer l'audience Home à l'heure de
+  `distribution_started_at`.
+- [ ] Le schéma manque encore les décisions Beta 1 : sessions, invitations
+  de follow, blocages, signalements/modération, capacité POST, intérêts,
+  propriété de branche, signets et audit.
+- [ ] PostgreSQL production et éventuelle parité SQLite non conçus.
 
-- Migration 002 : colonne password_hash (scrypt salt:hash).
-- POST /api/auth/register et /api/auth/login (validation 4 chars serveur).
-- Position par défaut à l'inscription : Paris (temporaire, en attendant
-  l'onboarding géolocalisation).
-- Client : AuthPage React (Tailwind v4, @custom-variant dark par classe),
-  user stocké en localStorage (ba:user), thème dans ba:theme.
-- Pas de vraie session/token pour l'instant — à faire plus tard.
-- Inscription en 2 étapes : email+mdp (check email libre) puis @username
-  (check dispo live, debounce 400 ms). Pas de champ "confirmer le mdp"
-  (retiré à la demande de l'utilisateur). Login = email+mdp.
-- Stockage local : IndexedDB "blua-local" (store kv) — session:user,
-  pref:theme. Plus de localStorage.
+### Authentification et localisation
 
-## Home v1 (2026-08-15)
+- [x] Vérification de disponibilité email/pseudo.
+- [x] Inscription email + mot de passe (minimum 4) + pseudo + géolocalisation
+  obligatoire + timezone.
+- [x] Hash scrypt salé ; résolution de ville Nominatim best effort.
+- [x] Connexion email/mot de passe.
+- [x] UI d'authentification en trois étapes et stockage local IndexedDB.
+- [x] `location_checked_at` initialisé à l'inscription et mis à jour par
+  `POST /api/auth/location`; le client bloque l'accès après 24 h sans accord
+  de localisation au premier plan.
+- [x] Avatar de profil: upload JPEG/PNG/WebP limité à 5 Mo dans le bucket local
+  `server/data/profile-bucket`; seules URLs avatar et ville sont exposées.
+- [ ] La « session » actuelle n'est qu'un objet utilisateur côté client :
+  aucune session/token serveur, cookie HttpOnly, expiration ou révocation.
+- [ ] Pas de logout serveur, récupération de compte, protection CSRF ni
+  limitation de tentatives. L'endpoint de position reste provisoirement fondé
+  sur l'identifiant de la session locale, faute de session serveur.
 
-- HomePage.tsx : compo validée (nav gauche / feed / pigeonnier droite),
-  light + dark noir profond.
-- Compose avec choix destination (Amis/Branche/Cui-to-cui) ET transporteur
-  🐦 pigeon / ✉️ lettre (timbres) — deux ressources limitées distinctes.
-- Feed + pigeonnier = données de DÉMO en dur, à brancher sur l'API.
-- Envoi décrémente pigeons/timbres côté UI seulement (TODO POST /api/messages).
+### Moteurs de livraison
 
-## Design pass 2 (2026-08-15, retours utilisateur)
+- [x] Paramètres BIRD/POST centralisés.
+- [x] Rouge-gorge 40/50/60, 40 hubs, 5 régions et 10 gateways saisis.
+- [x] Haversine, random déterministe FNV-1a et premier trajet BIRD implémentés.
+- [ ] Moteur POST complet et gestion des calendriers/fuseaux non implémentés;
+  le premier trajet Home POST utilise provisoirement collecte + acheminement
+  local simplifiés.
+- [ ] Aucun test avec les exemples Lille → Londres/Montréal/Tokyo.
+- [x] Progression et position visuelle dérivées côté client pour le premier
+  trajet sortant Home; Mappy affiche son planisphère et l'itinéraire.
 
-- PAS D'EMOJI dans l'UI : icônes SVG inline (src/components/icons.tsx,
-  style Lucide stroke). Ton "pro, standards réseau social".
-- Pigeonnier nommé SUPPRIMÉ : pas de noms de pigeons ("c'est pas un jeu
-  vidéo"). À la place : compteurs simples (pigeons / timbres / en route).
-- Sidebar gauche sticky plein écran, pilule user collée en bas.
-- Responsive : mobile = header sticky (logo + compteurs + thème) et
-  TAB BAR fixe en bas (Home, Explorer, Messages, Arrivées, Profil) —
-  standard app sociale. Colonnes latérales masquées < lg.
+### API métier
 
-## Design pass 3 (2026-08-15)
+- [x] `GET /api/health` et routes `/api/auth/*` montées.
+- [x] `GET /api/deliveries/capacity` et `POST /api/deliveries/outbound`:
+  transaction message, delivery et slot BIRD/POST avec quota 5/5 et
+  restitution à `busy_until`.
+- [ ] Routes sociales Branch/Cui-to-cui, lecture paginée, résolution V3,
+  notification, purge et modération restent à implémenter.
+- [ ] Aucune politique d'autorisation partagée API/SSR.
 
-- Breakpoint desktop/mobile relevé de 1024px (lg Tailwind par défaut) à
-  1100px (--breakpoint-lg custom dans index.css) — en dessous, 3 colonnes
-  compressaient trop.
-- Colonnes latérales espacées (gap 24→40px desktop), padding vertical
-  harmonisé (py-8 partout), pilule user avec pt-8/pb-10 pour ne plus
-  toucher les bords.
-- Carte "Capacité d'envoi" : label explicatif inutile retiré, ne reste
-  que les 3 compteurs (pigeons / timbres / en route).
-- Anti-zoom iOS : tous les champs forcés à min. 16px (garde-fou global
-  `input,textarea,select{font-size:1rem}` en @layer base + text-[16px]
-  explicite sur les champs auth). Cibles tactiles <32px agrandies
-  (bouton thème, Répondre/Transmettre, toggle pigeon/lettre, Annuler).
-  touch-action:manipulation + tap-highlight transparent partout.
-- Post du feed : méta compactée sur UNE ligne ("il y a 2h · 264 km · via
-  Paris" au lieu de deux lignes avec "arrivé"). Le mot "arrivé" est
-  redondant, retiré.
-- LOCALISATION OBLIGATOIRE à l'inscription (nouvelle étape 3 du wizard
-  auth, après email+mdp et @username) :
-  - client : navigator.geolocation.getCurrentPosition, timezone via
-    Intl.DateTimeFormat().resolvedOptions().timeZone ;
-  - serveur : lat/lon requis dans /api/auth/register (400 sinon), conservés
-    avec la précision fournie par le navigateur pour calculer les trajets ;
-    la position exacte n'est jamais affichée dans l'UI ;
-  - ville résolue via Nominatim (reverse geocoding, best-effort, jamais
-    bloquant si échec) ;
-  - testé : refus sans lat/lon, acceptation avec coordonnées conservées et
-    ville "Paris" résolue correctement.
+### Interface
 
-## Fait
+- [x] Design Home responsive validé, thèmes clair et sombre noir profond.
+- [x] Composer et choix BIRD/POST maquettés.
+- [x] Cartes de feed, conversation, réponses et transmissions maquettées.
+- [x] Compteurs Home et Profil issus de l'API de capacité (quota 5/5).
+- [x] Navigation desktop avec Home, Branches, Cui-to-cui, Arrivées, Signets,
+  Profil et Paramètres.
+- [x] Navigation mobile flottante, safe-area, deux raccourcis persistés, badge
+  Signets conditionnel et menu à bulles. Le menu s'ouvre uniquement au bouton,
+  assombrit l'écran et verrouille son défilement.
+- [x] Paramètres : thème, choix des raccourcis isolés par utilisateur et
+  déconnexion locale.
+- [ ] Feed et branches utilisent des constantes de démonstration.
+- [ ] Réponses/transmissions restent des maquettes locales; seul envoi Home
+  crée actuellement le premier trajet physique serveur.
+- [x] Vues locales de démonstration pour Branches, Cui-to-cui, Notifications,
+  Signets et Profil, accessibles depuis la navigation.
+- [ ] Pas de vrai routeur ni données API pour ces vues, détail de branche,
+  conversation privée ou onboarding post-inscription.
+- [x] Carte Mappy intégrée aux trajets sortants du Profil, sans thème global;
+  elle ne montre que le trajet de son expéditeur.
+- [ ] Aucune donnée de signet réelle ; le compteur vaut zéro.
 
-- [x] Lecture des 4 docs de conception (`docs/*.txt`)
-- [x] Client : Vite 8 + React 19 + TS + Tailwind 4 installés et configurés
-      (plugin `@tailwindcss/vite`, proxy `/api`, build vérifié)
-- [x] Arborescence client : `features/{home, branches, cui-to-cui, pigeons,
-      notifications, explore, profile, onboarding}`, `components/`, `lib/`,
-      `api/`, `types/` (vides, .gitkeep)
-- [x] Serveur : Express 5 + better-sqlite3 + tsx, `src/index.ts` minimal
-      avec `GET /api/health` (typecheck OK)
-- [x] DB : migration `001_init.sql` fidèle au doc SQLite — 8 tables créées
-      dans `server/data/app.db`, WAL vérifié
-- [x] Delivery-engine : `rules.ts` (paramètres d'équilibrage complets),
-      `birds.ts` (ROBIN 40/50/60), `hubs.ts` (les 40 hubs / 10 gateways
-      saisis) + stubs typés `haversine.ts`, `seeded-random.ts`, `bird.ts`,
-      `post.ts`
-- [x] Stubs de routes par module (users, friendships, branches, messages,
-      deliveries, pigeons, notifications)
-- [x] Racine : README, .gitignore, scripts (`dev`, `db:migrate`, `build`)
+### SEO et pages publiques
 
-## Pas fait (volontairement — consigne : squelette uniquement)
+- [ ] Aucun SSR, entry server, routes publiques dédiées ou hydratation.
+- [ ] Pas de pages `/about`, `/how-it-works`, légales, branche publique ou
+  profil public.
+- [ ] Pas de canonical, Open Graph, robots, sitemap, JSON-LD ni vrais 404 SSR.
 
-- [ ] Implémentation des moteurs BIRD / POST (specs complètes dans
-      `send method.txt` §46 ; stubs prêts)
-- [ ] `seededRandom` (FNV-1a, §11) et `distanceKm` Haversine (§03)
-- [ ] Routes API métier + transaction d'envoi atomique (§15 doc SQLite)
-- [ ] UI (aucun écran ; App.tsx = placeholder)
-- [ ] Auth / sessions (rien dans les docs — à clarifier avec l'utilisateur)
-- [ ] Git non initialisé (demande explicite : pas de lien GitHub pour l'instant)
+## Dettes et contradictions prioritaires
 
-## Prochaines étapes suggérées (ordre conseillé doc §88)
+1. Les AI docs sont désormais alignés sur le follow unilatéral ; les passages
+   du document produit/V3 parlant seulement « d'amis » devront être clarifiés
+   lors de leur prochaine révision.
+2. La diffusion V3 actuelle repose sur `friendship_periods`, alors que la Home
+   doit reposer sur l'historique orienté des follows.
+3. `004_home_delivery_hub.sql` conserve des colonnes de l'ancien modèle ; il
+   faut décider si elles restent utiles au trajet physique initial ou migrer
+   vers une représentation V3 plus explicite.
+4. L'authentification actuelle ne protège aucune API multi-utilisateur.
+5. SQLite est le runtime actuel alors que la documentation SEO vise PostgreSQL
+   en production.
+6. Les décisions produit ouvertes empêchent de figer tout le schéma Beta 1.
 
-1. Implémenter `seeded-random.ts` + `haversine.ts` (petits, testables)
-2. Implémenter `bird.ts` puis `post.ts` avec les exemples des docs comme
-   tests (Lille→Londres ~6 h, Lille→Montréal ~16-17 j, Lille→Tokyo ~29 j)
-3. Transaction d'envoi + capacité pigeons
-4. Routes lecture (Home fan-out on read, branche, cui-to-cui, notifications)
-5. Écrans MVP : onboarding, Home, écrire, pigeonnier, branche, explorer
+## Prochaine action
 
-## Questions ouvertes à poser à l'utilisateur
-
-- Nombre initial de pigeons par utilisateur (doc §87 : non tranché ; MVP
-  suggère 3-5)
-- Auth : simple username (comme le schéma users) ou vrai login ?
-- Le nom « Blue Atmosphere » est-il le nom final ? (doc : naming à définir)
+Commencer par la phase 0 puis la phase 1 de
+[04-roadmap-beta-1.md](04-roadmap-beta-1.md). Ne pas brancher l'UI de messages
+avant d'avoir un moteur déterministe testé, une session serveur et un modèle
+social/schema stabilisés.

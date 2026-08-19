@@ -8,15 +8,20 @@
 // - une même seed produit TOUJOURS la même valeur (hash FNV-1a suggéré §11).
 
 /** Retourne une valeur déterministe dans [0, 1) pour une seed donnée. */
-export function seededRandom(_seed: string): number {
-  throw new Error('Not implemented — voir docs/send method.txt §11')
+export function seededRandom(seed: string): number {
+  let hash = 0x811c9dc5
+  for (const char of seed) {
+    hash ^= char.charCodeAt(0)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0) / 0x1_0000_0000
 }
 
 /** Valeur déterministe dans [min, max) pour une seed donnée. */
 export function seededRandomBetween(
-  _seed: string,
-  _min: number,
-  _max: number,
+  seed: string,
+  min: number,
+  max: number,
 ): number {
-  throw new Error('Not implemented — voir docs/send method.txt §11 et §40')
+  return min + (max - min) * seededRandom(seed)
 }

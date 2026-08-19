@@ -104,6 +104,9 @@ CREATE TABLE users (
     country_code TEXT,
     timezone TEXT,
 
+    -- dernière confirmation de position par le serveur ; pas de GPS continu
+    location_checked_at INTEGER NOT NULL,
+
     created_at INTEGER NOT NULL
 );
 
@@ -258,6 +261,9 @@ CREATE TABLE messages (
     branch_id TEXT,
     recipient_user_id TEXT,
     parent_message_id TEXT,
+
+    -- pour DIRECT : arrivée fixée à l'envoi, conservée après purge de delivery
+    available_at INTEGER,
 
     created_at INTEGER NOT NULL,
 
@@ -1325,6 +1331,165 @@ PRINCIPES :
     14. Ne pas optimiser pour des millions d'utilisateurs avant d'avoir validé
         le produit avec les premiers utilisateurs.
 
+
+================================================================================
+28. ADDENDUM IMPÉRATIF — DIFFUSION V3
+================================================================================
+
+Cette section prévaut sur toutes les sections antérieures qui évoquent une
+delivery par destinataire, un delivered_at individuel, ou un fan-out de
+deliveries pour Home ou Branch.
+
+Une delivery représente désormais seulement un trajet physique vers une
+destination unique : CUI-TO-CUI, auteur -> branche, ou auteur -> hub Home.
+Une diffusion à partir d'une branche ou d'un hub Home utilise broadcasts et
+bitmaps : elle ne crée jamais N deliveries utilisateur.
+
+Historique des membres de branche et slots stables :
+
+CREATE TABLE branch_membership_periods (
+    id TEXT PRIMARY KEY,
+    branch_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    slot_index INTEGER NOT NULL,
+    role TEXT NOT NULL DEFAULT 'MEMBER',
+    joined_at INTEGER NOT NULL,
+    left_at INTEGER,
+    UNIQUE(branch_id, slot_index),
+    FOREIGN KEY (branch_id) REFERENCES branches(id),
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE INDEX membership_period_lookup
+ON branch_membership_periods(branch_id, user_id, joined_at, left_at);
+
+slot_index est attribué par branche, stable et jamais réutilisé. Il ne dépend
+jamais de l'ordre physique des lignes SQLite.
+
+Historique des amitiés, nécessaire pour les droits Home :
+
+CREATE TABLE friendship_periods (
+    id TEXT PRIMARY KEY,
+    user_a_id TEXT NOT NULL,
+    user_b_id TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    ended_at INTEGER,
+    FOREIGN KEY (user_a_id) REFERENCES users(id),
+    FOREIGN KEY (user_b_id) REFERENCES users(id)
+);
+
+CREATE INDEX friendship_period_lookup
+ON friendship_periods(user_a_id, user_b_id, started_at, ended_at);
+
+Les IDs sont normalisés comme dans friendships. Une période couvre une
+diffusion lorsque started_at <= distribution_started_at < ended_at, ou quand
+ended_at vaut NULL. La table friendships peut rester la relation active rapide,
+mais friendship_periods fait autorité pour l'historique.
+
+Slots stables pour l'audience Home d'un auteur :
+
+CREATE TABLE home_recipient_slots (
+    publisher_user_id TEXT NOT NULL,
+    recipient_user_id TEXT NOT NULL,
+    slot_index INTEGER NOT NULL,
+    assigned_at INTEGER NOT NULL,
+    PRIMARY KEY (publisher_user_id, recipient_user_id),
+    UNIQUE (publisher_user_id, slot_index),
+    FOREIGN KEY (publisher_user_id) REFERENCES users(id),
+    FOREIGN KEY (recipient_user_id) REFERENCES users(id)
+);
+
+Le slot est conservé après une fin d'amitié afin que les anciens broadcasts
+restent interprétables. Il n'est jamais réutilisé.
+
+CREATE TABLE broadcasts (
+    id TEXT PRIMARY KEY,
+    message_id TEXT NOT NULL UNIQUE,
+    audience_type TEXT NOT NULL, -- HOME ou BRANCH
+    origin_type TEXT NOT NULL,   -- HUB ou BRANCH
+    origin_id TEXT NOT NULL,
+    origin_lat REAL NOT NULL,
+    origin_lon REAL NOT NULL,
+    method TEXT NOT NULL,        -- BIRD ou POST
+    distribution_started_at INTEGER NOT NULL,
+    settled_at INTEGER NOT NULL,
+    FOREIGN KEY (message_id) REFERENCES messages(id)
+);
+
+CREATE INDEX broadcasts_active
+ON broadcasts(audience_type, distribution_started_at, settled_at);
+
+CREATE TABLE broadcast_bitmap_chunks (
+    broadcast_id TEXT NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    received_bits BLOB NOT NULL,
+    PRIMARY KEY (broadcast_id, chunk_index),
+    FOREIGN KEY (broadcast_id) REFERENCES broadcasts(id)
+);
+
+Un chunk contient exactement 512 bits (64 octets). Le backend pose un bit dans une
+transaction courte et atomique seulement après avoir autorisé le lecteur. Un
+bit signifie « reçu / déverrouillé », jamais « lu ».
+
+Ce format réduit la contention : deux réceptions simultanées n'écrivent le même
+chunk que si leurs slots appartiennent au même groupe de 512 utilisateurs.
+
+    chunk_index = floor(slot_index / 512)
+    bit_index   = slot_index % 512
+
+Lecture d'une Home ou d'une branche avant settled_at :
+
+    1. vérifier l'éligibilité historique à distribution_started_at ;
+    2. si bit reçu = 1, retourner le message ;
+    3. sinon calculer l'arrivée depuis le hub/la branche vers users.latitude /
+       users.longitude, dernière position connue ;
+    4. si arrivée atteinte, poser le bit et retourner le message ;
+    5. sinon ne pas retourner le contenu.
+
+Pour une branche, l'éligibilité exige une période joined_at <=
+distribution_started_at < left_at (ou left_at NULL). Pour Home, elle exige
+l'amitié existante à distribution_started_at. Un nouveau membre ou nouvel ami
+ne reçoit pas les anciens messages.
+
+Quand now >= settled_at, supprimer broadcast_bitmap_chunks. L'accès des
+personnes historiquement éligibles ne requiert alors plus de bitmap. settled_at
+utilise une borne maximale mondiale versionnée par méthode, jamais la position
+actuelle d'un lecteur.
+
+Les premières deliveries auteur -> branche/hub restent calculées une seule
+fois à l'envoi. Le calcul vers un lecteur dont le bit vaut 0 est, lui, évalué
+à la lecture avec sa dernière position connue. Pour un pigeon, la seed doit
+inclure message_id + recipient_user_id. Une fois le bit posé, le message ne
+disparaît jamais après une mise à jour de position.
+
+CUI-TO-CUI — PURGE DE DELIVERY
+-------------------------------
+
+Un cui-to-cui crée une seule delivery physique directe vers recipient_user_id.
+À l'envoi, son arrivée calculée est aussi copiée dans messages.available_at.
+La lecture devient alors :
+
+    type = 'DIRECT'
+    AND recipient_user_id = lecteur.id
+    AND available_at <= now
+
+Après l'arrivée, la delivery détaillée peut être supprimée lors d'un nettoyage
+différé : messages.available_at conserve le droit de lecture, tandis que la
+timeline, la vitesse et la route ne saturent pas deliveries. Il ne faut pas
+attendre un worker exact à l'heure d'arrivée : la purge peut être opportuniste
+ou périodique. Une delivery directe n'est jamais remplacée par un indicateur
+« arrivée pour toute la Terre » ; elle concerne un seul destinataire.
+
+PRINCIPES V3 :
+
+    1. Message = un contenu stocké une seule fois.
+    2. Home et Branch = 0 delivery individuelle de diffusion.
+    3. CUI-TO-CUI = delivery directe temporaire ; available_at reste dans le
+       message après purge de la delivery.
+    4. Le backend décide l'accès ; le client ne le calcule pas seul.
+    5. users.location_checked_at limite la demande GPS à une fois par 24 h
+       au premier plan, sans suivi d'arrière-plan.
+    6. Les bitmap chunks sont temporaires ; les relations historiques restent.
 
 ================================================================================
 FIN

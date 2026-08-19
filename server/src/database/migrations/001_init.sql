@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Migration 001 — Schéma initial MVP Blue Atmosphere
--- Source : docs/blue atmosphere sqlite.txt
+-- Source : docs/b-atmos sqlite.txt
 -- Une seule base : data/app.db (WAL, foreign_keys ON, busy_timeout 5000)
 -- ============================================================================
 
@@ -136,17 +136,10 @@ CREATE TABLE deliveries (
     origin_lat REAL NOT NULL,
     origin_lon REAL NOT NULL,
 
-    -- Pour une publication HOME : hub depuis lequel la copie individuelle
-    -- est relayée. NULL pour les communications directes (DM, branche, réponse).
-    origin_hub_id TEXT,
-
     destination_lat REAL NOT NULL,
     destination_lon REAL NOT NULL,
 
     sent_at INTEGER NOT NULL,
-    -- Instant où CETTE livraison part réellement. Pour HOME, il correspond à
-    -- l'arrivée du trajet initial auteur → hub ; pour un trajet direct, sent_at.
-    dispatched_at INTEGER,
     delivered_at INTEGER NOT NULL,
 
     distance_km REAL,

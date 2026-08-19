@@ -1,10 +1,16 @@
-import { useState, type ComponentType, type SVGProps } from 'react'
+import { useEffect, useState, type ComponentType, type SVGProps } from 'react'
 import { clearUser, type User } from '../../api/auth'
+import MobileNavigation, {
+  type MobileNavDestination,
+} from '../../components/MobileNavigation'
+import SecondaryPages from './SecondaryPages'
+import { getCapacity, sendHome } from '../../api/deliveries'
+import { kvGet, kvSet } from '../../lib/blua-local'
 import {
   IconBell,
   IconBird,
+  IconBookmark,
   IconBranch,
-  IconCompass,
   IconHome,
   IconLogout,
   IconMail,
@@ -13,6 +19,7 @@ import {
   IconRepeat,
   IconReply,
   IconSend,
+  IconSettings,
   IconSun,
   IconUser,
 } from '../../components/icons'
@@ -22,6 +29,7 @@ interface Props {
   dark: boolean
   toggleDark: () => void
   onLogout: () => void
+  onUserUpdate: (user: User) => void
 }
 
 interface Note {
@@ -55,7 +63,6 @@ interface BranchEcho {
   branch: string
   distance: string
   activity: string
-  friends: string
   text: string
 }
 
@@ -113,8 +120,7 @@ const DEMO_FEED: (Note | BranchEcho)[] = [
     echo: true as const,
     branch: 'Photo de rue Paris',
     distance: '4,1 km',
-    activity: "89 arrivées aujourd'hui",
-    friends: '3 de vos amis y passent',
+    activity: '89 arrivées récentes',
     text: '« Vous shootez avec quoi la nuit ? Le grain de la pellicule me manque… »',
   },
   {
@@ -156,24 +162,47 @@ const DEMO_BRANCHES = [
 
 type IconCmp = ComponentType<SVGProps<SVGSVGElement>>
 
-// Navigation unique — mêmes entrées sur desktop (sidebar) et mobile (tab bar)
-const NAV: { icon: IconCmp; label: string; active?: boolean; badge?: number }[] = [
-  { icon: IconHome, label: 'Home', active: true },
-  { icon: IconCompass, label: 'Explorer' },
-  { icon: IconBranch, label: 'Mes branches' },
-  { icon: IconMail, label: 'Cui-to-cui', badge: 2 },
-  { icon: IconBell, label: 'Arrivées' },
-  { icon: IconUser, label: 'Profil' },
+interface NavDestination extends MobileNavDestination {
+  icon: IconCmp
+  desktopBadge?: number
+}
+
+// Explorer et Mes branches sont réunis dans une seule destination Branches.
+const NAV: NavDestination[] = [
+  { route: '/home', icon: IconHome, label: 'Home' },
+  { route: '/branches', icon: IconBranch, label: 'Branches' },
+  { route: '/messages', icon: IconMail, label: 'Cui-to-cui', desktopBadge: 2 },
+  { route: '/arrivals', icon: IconBell, label: 'Notifications' },
+  { route: '/bookmarks', icon: IconBookmark, label: 'Signets', kind: 'bookmarks' },
+  { route: '/profile', icon: IconUser, label: 'Profil' },
+  { route: '/settings', icon: IconSettings, label: 'Paramètres' },
 ]
+
+const SHORTCUT_OPTIONS = NAV.filter(
+  ({ route }) => route !== '/home' && route !== '/settings',
+)
+
+const mobileShortcutsKey = (userId: string) => `pref:mobile-shortcuts:${userId}`
 
 type Carrier = 'BIRD' | 'POST'
 
-export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
+export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdate }: Props) {
+  const [currentRoute, setCurrentRoute] = useState(() => {
+    const route = window.location.pathname
+    return NAV.some((item) => item.route === route) ? route : '/home'
+  })
+  const [shortcutRoutes, setShortcutRoutes] = useState<[string, string]>([
+    '/branches',
+    '/bookmarks',
+  ])
+  const [bookmarkCount] = useState(0)
+  const [menuOpen, setMenuOpen] = useState(false)
   const [text, setText] = useState('')
   const [carrier, setCarrier] = useState<Carrier>('BIRD')
-  const [pigeonsFree, setPigeonsFree] = useState(2)
-  const [stamps, setStamps] = useState(3)
-  const [inFlight, setInFlight] = useState(3)
+  const [pigeonsFree, setPigeonsFree] = useState(5)
+  const [stamps, setStamps] = useState(5)
+  const [inFlight, setInFlight] = useState(0)
+  const [sendError, setSendError] = useState('')
   const [composeOpen, setComposeOpen] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Note | null>(null)
   const [replyFor, setReplyFor] = useState<string | null>(null)
@@ -184,20 +213,95 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
   const [pendingTransmissions, setPendingTransmissions] = useState<Record<string, Carrier>>({})
   const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
 
+  useEffect(() => {
+    void kvGet<[string, string]>(mobileShortcutsKey(user.id)).then((saved) => {
+      if (
+        saved?.length === 2 &&
+        saved.every((route) => SHORTCUT_OPTIONS.some((item) => item.route === route)) &&
+        saved[0] !== saved[1]
+      ) {
+        setShortcutRoutes(saved)
+      }
+    })
+
+    const handleHistoryNavigation = () => {
+      const route = window.location.pathname
+      setCurrentRoute(NAV.some((item) => item.route === route) ? route : '/home')
+    }
+    window.addEventListener('popstate', handleHistoryNavigation)
+    return () => window.removeEventListener('popstate', handleHistoryNavigation)
+  }, [user.id])
+
+  useEffect(() => {
+    void getCapacity(user.id).then(({ capacity }) => {
+      setPigeonsFree(capacity.bird.available)
+      setStamps(capacity.post.available)
+      setInFlight(capacity.bird.busy + capacity.post.busy)
+    }).catch(() => {})
+  }, [user.id])
+
+  useEffect(() => {
+    if (!menuOpen) return
+
+    const previousBodyOverflow = document.body.style.overflow
+    const previousRootOverflow = document.documentElement.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.documentElement.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      document.documentElement.style.overflow = previousRootOverflow
+    }
+  }, [menuOpen])
+
+  function navigate(route: string) {
+    if (!NAV.some((item) => item.route === route)) return
+    if (window.location.pathname !== route) window.history.pushState({}, '', route)
+    setCurrentRoute(route)
+    setSelectedPost(null)
+    setComposeOpen(false)
+    setMenuOpen(false)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function setMobileShortcut(index: 0 | 1, route: string) {
+    if (!SHORTCUT_OPTIONS.some((item) => item.route === route)) return
+    const next: [string, string] = [...shortcutRoutes]
+    const otherIndex = index === 0 ? 1 : 0
+    if (next[otherIndex] === route) next[otherIndex] = next[index]
+    next[index] = route
+    setShortcutRoutes(next)
+    void kvSet(mobileShortcutsKey(user.id), next)
+  }
+
+  const mobileShortcuts = shortcutRoutes.map(
+    (route) => SHORTCUT_OPTIONS.find((item) => item.route === route)!,
+  ) as [NavDestination, NavDestination]
+  const mobileMenuOverlay = menuOpen && (
+    <button
+      type="button"
+      aria-label="Fermer le menu"
+      onClick={() => setMenuOpen(false)}
+      className="fixed inset-0 z-45 bg-[#102c43]/55 lg:hidden dark:bg-black/70"
+    />
+  )
+
   const canSend =
     text.trim().length > 0 && (carrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0)
 
-  function send() {
+  async function send() {
     if (!canSend) return
-    // TODO : POST /api/messages — transaction message + pigeon_action + delivery
-    if (carrier === 'BIRD') {
-      setPigeonsFree((n) => n - 1)
-      setInFlight((n) => n + 1)
-    } else {
-      setStamps((n) => n - 1)
+    setSendError('')
+    try {
+      const { capacity } = await sendHome(user.id, text.trim(), carrier)
+      setPigeonsFree(capacity.bird.available)
+      setStamps(capacity.post.available)
+      setInFlight(capacity.bird.busy + capacity.post.busy)
+      setText('')
+      setComposeOpen(false)
+    } catch (error) {
+      setSendError(error instanceof Error ? error.message : 'Envoi impossible.')
     }
-    setText('')
-    setComposeOpen(false)
   }
 
   async function logout() {
@@ -209,7 +313,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
     return selectedCarrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0
   }
 
-  function useCarrier(selectedCarrier: Carrier) {
+  function consumeCarrier(selectedCarrier: Carrier) {
     if (selectedCarrier === 'BIRD') {
       setPigeonsFree((count) => count - 1)
       setInFlight((count) => count + 1)
@@ -236,7 +340,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
   function submitReply(note: Note) {
     if (!replyText.trim() || !carrierAvailable(actionCarrier)) return
-    useCarrier(actionCarrier)
+    consumeCarrier(actionCarrier)
     setPendingReplies((replies) => ({
       ...replies,
       [note.id]: [
@@ -263,7 +367,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
   function submitTransmit(note: Note) {
     if (!carrierAvailable(actionCarrier) || pendingTransmissions[note.id]) return
-    useCarrier(actionCarrier)
+    consumeCarrier(actionCarrier)
     setPendingTransmissions((transmissions) => ({
       ...transmissions,
       [note.id]: actionCarrier,
@@ -307,6 +411,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
+        {mobileMenuOverlay}
         <header className="sticky top-0 z-30 border-b border-white/50 bg-white/85 backdrop-blur dark:border-night-line dark:bg-night-0/90">
           <div className="mx-auto flex max-w-[720px] items-center gap-3 px-4 py-3">
             <button
@@ -330,7 +435,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           </div>
         </header>
 
-        <main className="mx-auto max-w-[720px] px-4 py-5 pb-12">
+        <main className="mx-auto max-w-[720px] px-4 py-5 pb-32 lg:pb-12">
           <article className={panel + ' p-4.5'}>
             <div className="flex items-start gap-3">
               <div
@@ -427,6 +532,15 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           </section>
 
         </main>
+        <MobileNavigation
+          currentRoute={currentRoute}
+          bookmarkCount={bookmarkCount}
+          shortcuts={mobileShortcuts}
+          menuItems={NAV}
+          onNavigate={navigate}
+          onOpenMenu={() => setMenuOpen((open) => !open)}
+          menuOpen={menuOpen}
+        />
       </div>
     )
   }
@@ -467,6 +581,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] transition-colors dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
+      {mobileMenuOverlay}
       {/* ================= HEADER MOBILE ================= */}
       <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-white/50 bg-white/80 px-4 py-3 backdrop-blur lg:hidden dark:border-night-line dark:bg-night-0/85">
         <IconBird className="text-xl text-accent" />
@@ -478,13 +593,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           <span className="flex items-center gap-1">
             <IconMail className="text-base" /> {stamps}
           </span>
-          <button onClick={toggleDark} className="p-2.5 text-lg" title="Thème">
-            {dark ? <IconSun /> : <IconMoon />}
-          </button>
         </div>
       </header>
 
-      <div className="mx-auto grid max-w-[1240px] grid-cols-1 gap-6 p-4 pb-24 lg:grid-cols-[250px_1fr_310px] lg:gap-10 lg:px-8 lg:pb-6">
+      <div
+        className="mobile-nav-safe-padding mx-auto grid max-w-[1240px] grid-cols-1 gap-6 p-4 lg:grid-cols-[250px_1fr_310px] lg:gap-10 lg:px-8"
+      >
         {/* ================= NAV GAUCHE (fixe) ================= */}
         <aside className="hidden lg:block">
           <div className="sticky top-0 flex h-screen flex-col pt-8 pb-10">
@@ -495,21 +609,25 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
             <nav className="mt-3">
               {NAV.map((n) => (
                 <a
-                  key={n.label}
-                  href="#"
-                  onClick={(e) => e.preventDefault()}
+                  key={n.route}
+                  href={n.route}
+                  aria-current={currentRoute === n.route ? 'page' : undefined}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    navigate(n.route)
+                  }}
                   className={
                     'my-1 flex items-center gap-3.5 rounded-full px-4 py-3 text-[15.5px] font-semibold transition ' +
-                    (n.active
+                    (currentRoute === n.route
                       ? 'bg-white shadow-[0_4px_14px_rgba(42,157,244,.18)] dark:bg-night-2 dark:shadow-none'
                       : 'hover:bg-white/70 dark:hover:bg-night-2/60')
                   }
                 >
-                  <n.icon className={'text-xl ' + (n.active ? 'text-accent' : '')} />
+                  <n.icon className={'text-xl ' + (currentRoute === n.route ? 'text-accent' : '')} />
                   {n.label}
-                  {n.badge && (
+                  {(n.desktopBadge || (n.kind === 'bookmarks' && bookmarkCount > 0)) && (
                     <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-white">
-                      {n.badge}
+                      {n.kind === 'bookmarks' ? bookmarkCount : n.desktopBadge}
                     </span>
                   )}
                 </a>
@@ -518,9 +636,13 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
             {/* pilule user — collée en bas de la colonne */}
             <div className={'mt-auto flex items-center gap-2.5 rounded-full px-3.5 py-2.5 ' + panel}>
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-[15px] font-extrabold text-white">
-                {user.username.charAt(0).toUpperCase()}
-              </div>
+              {user.avatarUrl ? (
+                <img src={user.avatarUrl} alt="Photo de profil" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-[15px] font-extrabold text-white">
+                  {user.username.charAt(0).toUpperCase()}
+                </div>
+              )}
               <div className="min-w-0">
                 <b className="block truncate text-sm">{user.username}</b>
                 <small className={'block truncate text-xs ' + mutedText}>
@@ -549,6 +671,10 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
 
         {/* ================= FEED ================= */}
         <main className="lg:py-8">
+          {currentRoute !== '/home' && currentRoute !== '/settings' ? (
+            <SecondaryPages route={currentRoute} user={user} onUserUpdate={onUserUpdate} />
+          ) : (
+            <>
           {/* compose inline — desktop uniquement.
               La Home publie vers les abonnés : pas de choix de destination ici. */}
           <div className={panel + ' hidden p-4.5 lg:block'}>
@@ -571,6 +697,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
               </button>
             </div>
             {capacityWarning}
+            {sendError && <p role="alert" className="mt-2 text-[12.5px] font-semibold text-red-600 dark:text-red-400">{sendError}</p>}
           </div>
 
           {/* posts */}
@@ -592,11 +719,15 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
                   </div>
                 </div>
                 <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
-                <div className="flex items-center justify-between gap-2">
-                  <small className={mutedText}>
-                    <b>{p.activity}</b> · {p.friends}
+                <div className="flex items-center gap-3">
+                  <small className={'min-w-0 flex-1 truncate ' + mutedText}>
+                    <b>{p.activity}</b>
                   </small>
-                  <button className="rounded-full bg-emerald-600 px-4 py-2 text-[13px] font-extrabold text-white transition hover:bg-emerald-700">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/branches')}
+                    className="shrink-0 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-extrabold text-emerald-700 transition hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-900 dark:bg-night-1 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                  >
                     Voir la branche
                   </button>
                 </div>
@@ -734,7 +865,8 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
           <p className={'py-8 text-center text-[13px] ' + mutedText}>
             Feed de démonstration · sera branché sur l'API
           </p>
-
+            </>
+          )}
         </main>
 
         {/* ================= COLONNE DROITE (fixe) ================= */}
@@ -784,12 +916,92 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
         </aside>
       </div>
 
+      {currentRoute === '/settings' && (
+        <section
+          aria-labelledby="settings-title"
+          className={
+            'fixed inset-0 z-40 bg-[#f6fbff] px-4 pt-5 dark:bg-night-0 lg:pt-10 ' +
+            (menuOpen ? 'touch-none overflow-hidden' : 'overflow-y-auto')
+          }
+          style={{ paddingBottom: 'calc(66px + max(12px, env(safe-area-inset-bottom)) + 28px)' }}
+        >
+          <div className="mx-auto max-w-[680px]">
+            <div className="mb-5 flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => navigate('/home')}
+                className={'min-h-11 rounded-full px-3 text-sm font-bold hover:bg-white dark:hover:bg-night-2 ' + mutedText}
+              >
+                ← Retour
+              </button>
+              <h1 id="settings-title" className="text-xl font-extrabold">
+                Paramètres
+              </h1>
+            </div>
+
+            <div className={panel + ' divide-y divide-sky-100 overflow-hidden dark:divide-night-line'}>
+              <div className="flex items-center justify-between gap-4 p-4.5">
+                <div>
+                  <b className="block text-[15px]">Apparence</b>
+                  <small className={mutedText}>{dark ? 'Mode sombre' : 'Mode clair'}</small>
+                </div>
+                <button
+                  type="button"
+                  onClick={toggleDark}
+                  className="flex min-h-11 items-center gap-2 rounded-full bg-sky-50 px-4 text-sm font-bold text-[#1272b8] dark:bg-night-2 dark:text-accent-soft"
+                >
+                  {dark ? <IconSun /> : <IconMoon />}
+                  Changer
+                </button>
+              </div>
+
+              <fieldset className="p-4.5">
+                <legend className="text-[15px] font-bold">Navigation mobile</legend>
+                <p className={'mt-1 text-[13px] ' + mutedText}>
+                  Choisissez les deux raccourcis affichés au centre de la barre.
+                </p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {([0, 1] as const).map((index) => (
+                    <label key={index} className="text-[13px] font-bold">
+                      Raccourci {index + 1}
+                      <select
+                        value={shortcutRoutes[index]}
+                        onChange={(event) => setMobileShortcut(index, event.target.value)}
+                        className="mt-1.5 min-h-11 w-full rounded-xl border border-sky-100 bg-sky-50 px-3 text-[#1c3d5a] outline-none focus:border-accent dark:border-night-line dark:bg-night-2 dark:text-zinc-100"
+                      >
+                        {SHORTCUT_OPTIONS.map((option) => (
+                          <option key={option.route} value={option.route}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="p-4.5">
+                <b className="block text-[15px]">Compte</b>
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="mt-3 flex min-h-11 items-center gap-2 rounded-full px-4 text-sm font-bold text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/30"
+                >
+                  <IconLogout /> Se déconnecter
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ================= FAB ÉCRIRE — mobile ================= */}
-      {!composeOpen && (
+      {!composeOpen && !menuOpen && currentRoute === '/home' && (
         <button
           onClick={() => setComposeOpen(true)}
           title="Écrire"
-          className="fixed right-4 bottom-24 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-xl text-white shadow-xl shadow-accent/40 transition active:scale-90 lg:hidden"
+          className="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-xl text-white shadow-xl shadow-accent/40 transition active:scale-90 lg:hidden"
+          style={{ bottom: 'calc(66px + max(12px, env(safe-area-inset-bottom)) + 14px)' }}
         >
           <IconSend />
         </button>
@@ -838,28 +1050,15 @@ export default function HomePage({ user, dark, toggleDark, onLogout }: Props) {
         </div>
       )}
 
-      {/* ================= TAB BAR MOBILE — mêmes entrées que la sidebar ================= */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white/90 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden dark:border-night-line dark:bg-night-0/90">
-        {NAV.map((n) => (
-          <a
-            key={n.label}
-            href="#"
-            onClick={(e) => e.preventDefault()}
-            className={
-              'relative flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[9.5px] font-bold ' +
-              (n.active ? 'text-accent' : mutedText)
-            }
-          >
-            <n.icon className="text-[21px]" />
-            <span className="max-w-full truncate px-0.5">{n.label}</span>
-            {n.badge && (
-              <span className="absolute top-1 right-[18%] flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold text-white">
-                {n.badge}
-              </span>
-            )}
-          </a>
-        ))}
-      </nav>
+      <MobileNavigation
+        currentRoute={currentRoute}
+        bookmarkCount={bookmarkCount}
+        shortcuts={mobileShortcuts}
+        menuItems={NAV}
+        onNavigate={navigate}
+        onOpenMenu={() => setMenuOpen((open) => !open)}
+        menuOpen={menuOpen}
+      />
     </div>
   )
 }
