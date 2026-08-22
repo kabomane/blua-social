@@ -22,8 +22,8 @@ export const ROBIN: Bird = {
   minSpeedKmH: 40,
   targetSpeedKmH: 50,
   maxSpeedKmH: 60,
-  flightHoursPerDay: 8,
-  restHoursPerDay: 16,
+  flightHoursPerDay: 12,
+  restHoursPerDay: 12,
   routeFactor: 1.1,
 }
 

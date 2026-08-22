@@ -22,6 +22,11 @@ Une delivery reste pertinente uniquement pour un trajet physique unique :
 - auteur -> branche pour un message de branche ;
 - auteur -> hub pour un post Home.
 
+Une réponse hérite du contexte de son parent : hub pour Home, coordonnées de
+branche pour Branch, utilisateur pour cui-to-cui. Une transmission est un
+nouveau message, une nouvelle action de capacité et un nouveau trajet relié au
+message source ; sa destination détermine les mêmes règles.
+
 Après l'arrivée au point fixe (branche ou hub), la suite est un broadcast V3.
 
 CAS PARTICULIER : CUI-TO-CUI

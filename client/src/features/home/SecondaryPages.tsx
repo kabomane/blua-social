@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { User } from '../../api/auth'
 import { uploadAvatar } from '../../api/auth'
 import { getCapacity, type Capacity, type OutgoingDelivery } from '../../api/deliveries'
+import { getPendingMessages, type PendingMessage } from '../../api/messages'
 import TrackingCard from './TrackingCard'
 import {
   IconBell,
@@ -10,7 +11,6 @@ import {
   IconBranch,
   IconMail,
   IconMapPin,
-  IconReply,
   IconUser,
 } from '../../components/icons'
 
@@ -35,57 +35,91 @@ function PageHeader({ icon: Icon, title, children }: { icon: typeof IconBird; ti
   )
 }
 
-function Branches() {
-  const [tab, setTab] = useState<'joined' | 'discover'>('joined')
-  const branches = tab === 'joined'
-    ? [
-        ['Photo de rue Paris', 'Montmartre · 4,1 km', 'Une nouvelle note est arrivée.', '3 amis y passent'],
-        ['Cinéma indépendant', 'Paris · 6,7 km', 'Projection en discussion cette semaine.', '41 arrivées aujourd’hui'],
-      ]
-    : [
-        ['Étudiants Paris', 'Paris · 2,3 km', 'Un endroit pour échanger entre deux cours.', 'Proche de vous'],
-        ['Insomniaques de Soho', 'Londres', 'Quand la ville ne dort pas.', 'Branche active'],
-        ['Français à Tokyo', 'Tokyo', 'Adresses, décalage horaire et nouvelles du quartier.', 'Découverte'],
-      ]
+function EmptyState({ children }: { children: ReactNode }) {
+  return <p className={card + ' text-center text-[13px] ' + muted}>{children}</p>
+}
+
+function usePending(userId: string, type: PendingMessage['type']) {
+  const [messages, setMessages] = useState<PendingMessage[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    const refresh = () => {
+      void getPendingMessages(userId, type)
+        .then((result) => {
+          if (active) setMessages(result)
+        })
+        .catch(() => {
+          if (active) setMessages([])
+        })
+        .finally(() => {
+          if (active) setLoading(false)
+        })
+    }
+    refresh()
+    const interval = window.setInterval(refresh, 30_000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [type, userId])
+
+  return { messages, loading }
+}
+
+function remainingTime(deliveredAt: number) {
+  const minutes = Math.max(1, Math.ceil((deliveredAt - Date.now()) / 60_000))
+  if (minutes < 60) return `${minutes} min restantes`
+  const hours = Math.ceil(minutes / 60)
+  if (hours < 24) return `${hours} h restantes`
+  return `${Math.ceil(hours / 24)} j restants`
+}
+
+function PendingCards({ messages, user }: { messages: PendingMessage[]; user: User }) {
+  if (!messages.length) return null
+  return (
+    <div className="space-y-3">
+      {messages.map((message) => (
+        <article key={message.id} className="rounded-2xl border-2 border-dashed border-accent/45 bg-white/70 p-4.5 shadow-none dark:border-accent/35 dark:bg-night-1/70">
+          <div className="flex items-center gap-2 text-[12px] font-extrabold text-accent dark:text-accent-soft">
+            {message.method === 'BIRD' ? <IconBird className="animate-pulse" /> : <IconMail className="animate-pulse" />}
+            Pris en compte · en cours d’envoi
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <b className="text-[14px]">{user.username}</b>
+            <span className={'text-[12px] ' + muted}>→ {message.destinationLabel}</span>
+          </div>
+          <p className="mt-3 text-[14px] leading-relaxed">{message.text}</p>
+          <small className={'mt-3 block text-[12px] ' + muted}>{remainingTime(message.deliveredAt)}</small>
+        </article>
+      ))}
+    </div>
+  )
+}
+
+function Branches({ user }: Pick<Props, 'user'>) {
+  const pending = usePending(user.id, 'BRANCH')
   return (
     <>
       <PageHeader icon={IconBranch} title="Branches">Communautés ancrées dans un lieu. Position exacte jamais affichée.</PageHeader>
-      <div className="mb-4 flex gap-2 rounded-xl bg-sky-50 p-1 dark:bg-night-2">
-        {([['joined', 'Mes branches'], ['discover', 'Découvrir']] as const).map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={'min-h-10 flex-1 rounded-lg px-3 text-[13px] font-bold ' + (tab === id ? 'bg-white text-accent shadow-sm dark:bg-night-1 dark:text-accent-soft' : muted)}>{label}</button>)}
-      </div>
-      <div className="space-y-3">
-        {branches.map(([name, place, text, detail]) => (
-          <article key={name} className={card}>
-            <div className="flex gap-3"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"><IconBranch /></span><div className="min-w-0"><b className="block text-[15px]">{name}</b><span className={'mt-0.5 flex items-center gap-1 text-[12px] ' + muted}><IconMapPin /> {place}</span></div></div>
-            <p className="mt-3 text-[14px] leading-relaxed">{text}</p><small className={'mt-3 block text-[12px] font-semibold ' + muted}>{detail}</small>
-          </article>
-        ))}
-      </div>
+      {pending.loading ? <EmptyState>Chargement…</EmptyState> : pending.messages.length ? <PendingCards messages={pending.messages} user={user} /> : <EmptyState>Aucune branche à afficher.</EmptyState>}
     </>
   )
 }
 
-function Messages() {
-  const conversations = [
-    ['Emma', 'Londres · 343 km', 'Le café près de la gare est toujours ouvert ?', 'arrivé il y a 18 min', '#d64c7d'],
-    ['Noah', 'Bruxelles · 264 km', 'Un pigeon est en route vers vous.', 'arrivée estimée 18:40', '#3c8dd9'],
-    ['Maya', 'Tokyo', 'Merci pour tes adresses, je les garde.', 'hier', '#7d4cd6'],
-  ]
-  return <><PageHeader icon={IconMail} title="Cui-to-cui">Messages privés, seulement entre amis réciproques.</PageHeader><div className="space-y-3">{conversations.map(([name, place, text, state, color]) => <article key={name} className={card}><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-extrabold text-white" style={{ background: color }}>{name[0]}</span><div className="min-w-0 flex-1"><b className="block text-[15px]">{name}</b><small className={muted}>{place}</small></div><small className={'text-right text-[11px] ' + muted}>{state}</small></div><p className="mt-3 text-[14px]">{text}</p></article>)}</div></>
+function Messages({ user }: Pick<Props, 'user'>) {
+  const pending = usePending(user.id, 'DIRECT')
+  return <><PageHeader icon={IconMail} title="Cui-to-cui">Messages privés, seulement entre amis réciproques.</PageHeader>{pending.loading ? <EmptyState>Chargement…</EmptyState> : pending.messages.length ? <PendingCards messages={pending.messages} user={user} /> : <EmptyState>Aucune conversation.</EmptyState>}</>
 }
 
 function Notifications() {
-  const [unread, setUnread] = useState(true)
-  const items = [
-    [IconBird, 'Un cui-to-cui d’Emma est arrivé.', 'Il y a 18 min'],
-    [IconReply, 'Une réponse est arrivée dans Photo de rue Paris.', 'Aujourd’hui · 10:24'],
-    [IconBranch, 'Une activité nouvelle dans Cinéma indépendant.', 'Hier'],
-  ] as const
-  return <><div className="mb-5 flex items-start justify-between gap-3"><PageHeader icon={IconBell} title="Notifications">Arrivées et activités utiles. Pas de métriques de popularité.</PageHeader>{unread && <button onClick={() => setUnread(false)} className="mt-1 shrink-0 text-[12px] font-bold text-accent">Tout lire</button>}</div><div className="space-y-2">{items.map(([Icon, text, date], index) => <article key={text} className={card + ' flex gap-3'}><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent dark:bg-accent/15"><Icon /></span><div className="min-w-0 flex-1"><p className="text-[14px] font-semibold">{text}</p><small className={muted}>{date}</small></div>{unread && index === 0 && <span className="mt-2 h-2 w-2 rounded-full bg-accent" />}</article>)}</div></>
+  return <><PageHeader icon={IconBell} title="Notifications">Arrivées et activités utiles. Pas de métriques de popularité.</PageHeader><EmptyState>Aucune notification.</EmptyState></>
 }
 
 function Bookmarks() {
-  return <><PageHeader icon={IconBookmark} title="Signets">Notes conservées pour y revenir plus tard.</PageHeader><div className="space-y-3"><article className={card}><div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#f47f2a] text-xs font-extrabold text-white">A</span><b className="text-[14px]">Alice</b><small className={'ml-auto ' + muted}>il y a 2 j</small></div><p className="mt-3 text-[14px] leading-relaxed">Je cherche encore où revoir ce film. Vous me direz si vous trouvez.</p></article><article className={card}><div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#7d4cd6] text-xs font-extrabold text-white">M</span><b className="text-[14px]">Marc</b><small className={'ml-auto ' + muted}>il y a 6 j</small></div><p className="mt-3 text-[14px] leading-relaxed">Une branche près du Fuji est restée dans ma tête.</p></article></div></>
+  return <><PageHeader icon={IconBookmark} title="Signets">Notes conservées pour y revenir plus tard.</PageHeader><EmptyState>Aucun signet.</EmptyState></>
 }
 
 function Profile({ user, onUserUpdate }: Pick<Props, 'user' | 'onUserUpdate'>) {
@@ -119,8 +153,8 @@ function Profile({ user, onUserUpdate }: Pick<Props, 'user' | 'onUserUpdate'>) {
 }
 
 export default function SecondaryPages({ route, user, onUserUpdate }: Props) {
-  if (route === '/branches') return <Branches />
-  if (route === '/messages') return <Messages />
+  if (route === '/branches') return <Branches user={user} />
+  if (route === '/messages') return <Messages user={user} />
   if (route === '/arrivals') return <Notifications />
   if (route === '/bookmarks') return <Bookmarks />
   return <Profile user={user} onUserUpdate={onUserUpdate} />

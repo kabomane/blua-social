@@ -65,7 +65,7 @@ après purge opportuniste de sa delivery détaillée.
 - Haversine × 1,10 ;
 - vitesse déterministe triangulaire entre 40 et 60 km/h, centrée sur 50 ;
 - seeds incluant message, destination et étape ;
-- 8 h de vol puis 16 h de repos, sans repos final inutile ;
+- 12 h de vol puis 12 h de repos, sans repos final inutile ;
 - vitesse et timeline sauvegardées pour tout trajet physique fixe.
 
 ### Lettre / POST

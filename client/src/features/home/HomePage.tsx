@@ -1,10 +1,11 @@
-import { useEffect, useState, type ComponentType, type SVGProps } from 'react'
+import { useCallback, useEffect, useState, type ComponentType, type SVGProps } from 'react'
 import { clearUser, type User } from '../../api/auth'
 import MobileNavigation, {
   type MobileNavDestination,
 } from '../../components/MobileNavigation'
 import SecondaryPages from './SecondaryPages'
-import { getCapacity, sendHome } from '../../api/deliveries'
+import { getCapacity, sendHome, sendReply, sendTransmission } from '../../api/deliveries'
+import { getHomeFeed } from '../../api/messages'
 import { kvGet, kvSet } from '../../lib/blua-local'
 import {
   IconBell,
@@ -32,20 +33,7 @@ interface Props {
   onUserUpdate: (user: User) => void
 }
 
-interface Note {
-  id: string
-  author: string
-  handle: string
-  color: string
-  method: 'BIRD' | 'POST'
-  distance: string
-  arrivedAt: number
-  text: string
-  transmissions: number
-  replies: DemoReply[]
-}
-
-interface DemoReply {
+interface Reply {
   id: string
   author: string
   handle: string
@@ -53,8 +41,23 @@ interface DemoReply {
   age: string
 }
 
-interface PendingReply extends DemoReply {
-  method: Carrier
+interface Note {
+  id: string
+  author: string
+  handle: string
+  color: string
+  avatarUrl: string | null
+  method: 'BIRD' | 'POST'
+  distance: string
+  arrivedAt: number
+  pending: boolean
+  text: string
+  transmissions: number
+  replies: Reply[]
+}
+
+interface PendingReply extends Reply {
+  method: 'BIRD' | 'POST'
 }
 
 interface BranchEcho {
@@ -66,11 +69,6 @@ interface BranchEcho {
   text: string
 }
 
-/**
- * Libellé d'arrivée homogène, sans préfixe « il y a ».
- * < 1 h : min · aujourd'hui : h · nuit : cette nuit · hier : hier ·
- * < 30 j : j · < 24 mois : mois · ensuite : ans.
- */
 function formatArrivalAge(arrivedAt: number, now = new Date()): string {
   const date = new Date(arrivedAt)
   const elapsedMs = Math.max(0, now.getTime() - arrivedAt)
@@ -94,84 +92,30 @@ function formatArrivalAge(arrivedAt: number, now = new Date()): string {
   return `${Math.floor(months / 12)} ans`
 }
 
-// ---------------------------------------------------------------------------
-// Données de démonstration — remplacées par l'API (messages/deliveries)
-// quand le backend feed sera branché.
-// ---------------------------------------------------------------------------
-const DEMO_NOW = Date.now()
-const DEMO_FEED: (Note | BranchEcho)[] = [
-  {
-    id: 'm1',
-    author: 'Alice',
-    handle: 'alice',
-    color: '#f47f2a',
-    method: 'BIRD' as const,
-    distance: '391 km',
-    arrivedAt: DEMO_NOW - 20 * 60_000,
-    replies: [
-      { id: 'r1', author: 'Noah', handle: 'noah', text: 'Oui, la discussion après la séance était incroyable.', age: '14 min' },
-      { id: 'r2', author: 'Lina', handle: 'lina', text: 'Je cherche encore où le revoir. Tu me diras si tu trouves.', age: '8 min' },
-    ],
-    transmissions: 4,
-    text: "Quelqu'un a vu le film hier soir au ciné-club ? Je n'arrête pas d'y penser…",
-  },
-  {
-    id: 'e1',
-    echo: true as const,
-    branch: 'Photo de rue Paris',
-    distance: '4,1 km',
-    activity: '89 arrivées récentes',
-    text: '« Vous shootez avec quoi la nuit ? Le grain de la pellicule me manque… »',
-  },
-  {
-    id: 'm2',
-    author: 'Marc',
-    handle: 'marc',
-    color: '#7d4cd6',
-    method: 'POST' as const,
-    distance: '264 km',
-    arrivedAt: DEMO_NOW - 2 * 3_600_000,
-    replies: [
-      { id: 'r3', author: 'Maya', handle: 'maya', text: 'Cette branche près du Fuji est restée dans ma tête aussi.', age: '1 h' },
-    ],
-    transmissions: 1,
-    text: "Je viens de rentrer du Japon. J'ai laissé une branche là-bas, près du Fuji — envoyez-y un message un jour.",
-  },
-  {
-    id: 'm3',
-    author: 'Emma',
-    handle: 'emma',
-    color: '#d64c7d',
-    method: 'BIRD' as const,
-    distance: '9 726 km',
-    arrivedAt: DEMO_NOW - 29 * 86_400_000,
-    replies: [
-      { id: 'r4', author: 'Noah', handle: 'noah', text: 'Tokyo à Paris, quel trajet. Bien reçu de mon côté.', age: '12 j' },
-      { id: 'r5', author: 'Lina', handle: 'lina', text: 'Paris te répond : le ciel est gris, mais les cafés sont pleins.', age: '8 j' },
-    ],
-    transmissions: 8,
-    text: "Ce message a quitté Tokyo il y a un mois. S'il est arrivé jusqu'à toi, raconte-moi Paris.",
-  },
-]
+const NEARBY_BRANCHES: { name: string; info: string }[] = []
 
-const DEMO_BRANCHES = [
-  { name: 'Étudiants Paris', info: '2,3 km · très active' },
-  { name: 'Cinéma indépendant', info: "6,7 km · 41 arrivées aujourd'hui" },
-  { name: 'Insomniaques de Soho', info: 'Londres · forte activité' },
-]
+function avatarColor(value: string): string {
+  let hash = 0
+  for (const character of value) hash = (hash * 31 + character.charCodeAt(0)) | 0
+  return `hsl(${Math.abs(hash) % 360} 62% 48%)`
+}
+
+function formatDistance(distanceKm: number | null): string {
+  if (distanceKm === null) return 'distance inconnue'
+  return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: distanceKm < 10 ? 1 : 0 }).format(distanceKm)} km`
+}
 
 type IconCmp = ComponentType<SVGProps<SVGSVGElement>>
 
 interface NavDestination extends MobileNavDestination {
   icon: IconCmp
-  desktopBadge?: number
 }
 
 // Explorer et Mes branches sont réunis dans une seule destination Branches.
 const NAV: NavDestination[] = [
   { route: '/home', icon: IconHome, label: 'Home' },
   { route: '/branches', icon: IconBranch, label: 'Branches' },
-  { route: '/messages', icon: IconMail, label: 'Cui-to-cui', desktopBadge: 2 },
+  { route: '/messages', icon: IconMail, label: 'Cui-to-cui' },
   { route: '/arrivals', icon: IconBell, label: 'Notifications' },
   { route: '/bookmarks', icon: IconBookmark, label: 'Signets', kind: 'bookmarks' },
   { route: '/profile', icon: IconUser, label: 'Profil' },
@@ -199,19 +143,54 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   const [menuOpen, setMenuOpen] = useState(false)
   const [text, setText] = useState('')
   const [carrier, setCarrier] = useState<Carrier>('BIRD')
-  const [pigeonsFree, setPigeonsFree] = useState(5)
-  const [stamps, setStamps] = useState(5)
+  const [pigeonsFree, setPigeonsFree] = useState(0)
+  const [stamps, setStamps] = useState(0)
   const [inFlight, setInFlight] = useState(0)
   const [sendError, setSendError] = useState('')
+  const [feed, setFeed] = useState<(Note | BranchEcho)[]>([])
+  const [feedLoading, setFeedLoading] = useState(true)
+  const [feedError, setFeedError] = useState('')
   const [composeOpen, setComposeOpen] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Note | null>(null)
   const [replyFor, setReplyFor] = useState<string | null>(null)
   const [transmitFor, setTransmitFor] = useState<string | null>(null)
   const [replyText, setReplyText] = useState('')
+  const [replyError, setReplyError] = useState('')
   const [actionCarrier, setActionCarrier] = useState<Carrier>('BIRD')
   const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply[]>>({})
   const [pendingTransmissions, setPendingTransmissions] = useState<Record<string, Carrier>>({})
   const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
+
+  const loadFeed = useCallback(async () => {
+    setFeedError('')
+    try {
+      const messages = await getHomeFeed(user.id)
+      setFeed(messages.map((message) => ({
+        id: message.id,
+        author: message.author,
+        handle: message.handle,
+        color: avatarColor(message.authorId),
+        avatarUrl: message.avatarUrl,
+        method: message.method,
+        distance: formatDistance(message.distanceKm),
+        arrivedAt: message.arrivedAt,
+        pending: message.pending,
+        text: message.text,
+        transmissions: message.transmissions,
+        replies: message.replies.map((reply) => ({
+          id: reply.id,
+          author: reply.author,
+          handle: reply.handle,
+          text: reply.text,
+          age: formatArrivalAge(reply.arrivedAt),
+        })),
+      })))
+    } catch (cause) {
+      setFeedError(cause instanceof Error ? cause.message : 'Impossible de charger les messages.')
+    } finally {
+      setFeedLoading(false)
+    }
+  }, [user.id])
 
   useEffect(() => {
     void kvGet<[string, string]>(mobileShortcutsKey(user.id)).then((saved) => {
@@ -231,6 +210,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     window.addEventListener('popstate', handleHistoryNavigation)
     return () => window.removeEventListener('popstate', handleHistoryNavigation)
   }, [user.id])
+
+  useEffect(() => {
+    void loadFeed()
+    const refresh = window.setInterval(() => void loadFeed(), 30_000)
+    return () => window.clearInterval(refresh)
+  }, [loadFeed])
 
   useEffect(() => {
     void getCapacity(user.id).then(({ capacity }) => {
@@ -299,6 +284,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
       setInFlight(capacity.bird.busy + capacity.post.busy)
       setText('')
       setComposeOpen(false)
+      await loadFeed()
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'Envoi impossible.')
     }
@@ -313,70 +299,81 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     return selectedCarrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0
   }
 
-  function consumeCarrier(selectedCarrier: Carrier) {
-    if (selectedCarrier === 'BIRD') {
-      setPigeonsFree((count) => count - 1)
-      setInFlight((count) => count + 1)
-    } else {
-      setStamps((count) => count - 1)
-    }
-  }
-
   function replyTotal(note: Note) {
-    return note.replies.length + (pendingReplies[note.id]?.length ?? 0)
+    return new Set([
+      ...note.replies.map((reply) => reply.id),
+      ...(pendingReplies[note.id] ?? []).map((reply) => reply.id),
+    ]).size
   }
 
   function closeActionComposer() {
     setReplyFor(null)
     setTransmitFor(null)
     setReplyText('')
+    setReplyError('')
   }
 
   function openReply(note: Note) {
+    setSelectedPost(note)
     setReplyFor(note.id)
     setTransmitFor(null)
     setReplyText('')
+    setReplyError('')
   }
 
-  function submitReply(note: Note) {
+  async function submitReply(note: Note) {
     if (!replyText.trim() || !carrierAvailable(actionCarrier)) return
-    consumeCarrier(actionCarrier)
-    setPendingReplies((replies) => ({
-      ...replies,
-      [note.id]: [
-        ...(replies[note.id] ?? []),
-        {
-          id: `pending-${Date.now()}`,
-          author: user.username,
-          handle: user.username,
-          text: replyText.trim(),
-          age: '',
-          method: actionCarrier,
-        },
-      ],
-    }))
-    setReplyText('')
-    closeActionComposer()
+    setReplyError('')
+    try {
+      const content = replyText.trim()
+      const result = await sendReply(user.id, note.id, content, actionCarrier)
+      setPigeonsFree(result.capacity.bird.available)
+      setStamps(result.capacity.post.available)
+      setInFlight(result.capacity.bird.busy + result.capacity.post.busy)
+      setPendingReplies((replies) => ({
+        ...replies,
+        [note.id]: [
+          ...(replies[note.id] ?? []),
+          {
+            id: result.message.id,
+            author: user.username,
+            handle: user.username,
+            text: content,
+            age: '',
+            method: actionCarrier,
+          },
+        ],
+      }))
+      setReplyText('')
+      closeActionComposer()
+    } catch (cause) {
+      setReplyError(cause instanceof Error ? cause.message : 'Réponse impossible.')
+    }
   }
 
   function openTransmit(note: Note) {
     if (pendingTransmissions[note.id]) return
+    setSelectedPost(note)
     setTransmitFor(note.id)
     setReplyFor(null)
   }
 
-  function submitTransmit(note: Note) {
+  async function submitTransmit(note: Note) {
     if (!carrierAvailable(actionCarrier) || pendingTransmissions[note.id]) return
-    consumeCarrier(actionCarrier)
-    setPendingTransmissions((transmissions) => ({
-      ...transmissions,
-      [note.id]: actionCarrier,
-    }))
-    setTransmissionCounts((counts) => ({
-      ...counts,
-      [note.id]: (counts[note.id] ?? 0) + 1,
-    }))
-    closeActionComposer()
+    setReplyError('')
+    try {
+      const selectedCarrier = actionCarrier
+      const result = await sendTransmission(user.id, note.id, selectedCarrier)
+      setPigeonsFree(result.capacity.bird.available)
+      setStamps(result.capacity.post.available)
+      setInFlight(result.capacity.bird.busy + result.capacity.post.busy)
+      setPendingTransmissions((transmissions) => ({ ...transmissions, [note.id]: selectedCarrier }))
+      setTransmissionCounts((counts) => ({ ...counts, [note.id]: (counts[note.id] ?? 0) + 1 }))
+      closeActionComposer()
+      void loadFeed()
+    } catch (cause) {
+      setReplyError(cause instanceof Error ? cause.message : 'Transmission impossible.')
+    }
   }
 
   const panel =
@@ -408,6 +405,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   if (selectedPost) {
     const replyCount = replyTotal(selectedPost)
     const visibleReplies = [...selectedPost.replies, ...(pendingReplies[selectedPost.id] ?? [])]
+      .filter((reply, index, replies) => replies.findIndex((candidate) => candidate.id === reply.id) === index)
 
     return (
       <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
@@ -438,12 +436,16 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         <main className="mx-auto max-w-[720px] px-4 py-5 pb-32 lg:pb-12">
           <article className={panel + ' p-4.5'}>
             <div className="flex items-start gap-3">
-              <div
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
-                style={{ background: selectedPost.color }}
-              >
-                {selectedPost.author.charAt(0)}
-              </div>
+              {selectedPost.avatarUrl ? (
+                <img src={selectedPost.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+              ) : (
+                <div
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                  style={{ background: selectedPost.color }}
+                >
+                  {selectedPost.author.charAt(0).toUpperCase()}
+                </div>
+              )}
               <div>
                 <b className="block text-[15px]">{selectedPost.author}</b>
                 <small className={mutedText}>@{selectedPost.handle}</small>
@@ -455,11 +457,21 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             </div>
             <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
             <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
-              <button onClick={() => openReply(selectedPost)} className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}>
-                <IconReply /> {replyCount} réponses
+              <button
+                onClick={() => openReply(selectedPost)}
+                title="Répondre à cette note"
+                aria-label={`Répondre — ${replyCount}`}
+                className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
+              >
+                <IconReply /> {replyCount}
               </button>
-              <button onClick={() => openTransmit(selectedPost)} className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}>
-                <IconRepeat /> {selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)} transmissions
+              <button
+                onClick={() => openTransmit(selectedPost)}
+                title="Retransmettre cette note"
+                aria-label={`Retransmettre — ${selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)}`}
+                className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
+              >
+                <IconRepeat /> {selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)}
               </button>
               {pendingTransmissions[selectedPost.id] && (
                 <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
@@ -488,6 +500,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   maxLength={280}
                   className="min-h-[72px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
                 />
+                {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
@@ -504,6 +517,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   <b className="block text-sm">Transmettre à vos abonnés</b>
                   <small className={mutedText}>Votre envoi suivra son propre trajet.</small>
                 </div>
+                {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
@@ -549,24 +563,28 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   const carrierToggle = (
     <div className="flex items-center gap-1 rounded-full bg-slate-400/10 p-1 dark:bg-night-2">
       <button
+        type="button"
         onClick={() => setCarrier('BIRD')}
+        aria-pressed={carrier === 'BIRD'}
         title={`Pigeon — rapide sur courte distance (${pigeonsFree} disponibles)`}
         className={
           'flex min-h-[38px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-extrabold transition ' +
           (carrier === 'BIRD' ? 'bg-accent text-white' : mutedText)
         }
       >
-        <IconBird className="text-sm" /> {pigeonsFree}
+        <IconBird className="text-sm" /> Oiseau · {pigeonsFree}
       </button>
       <button
+        type="button"
         onClick={() => setCarrier('POST')}
+        aria-pressed={carrier === 'POST'}
         title={`Lettre — efficace sur longue distance (${stamps} timbres)`}
         className={
           'flex min-h-[38px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-extrabold transition ' +
           (carrier === 'POST' ? 'bg-accent text-white' : mutedText)
         }
       >
-        <IconMail className="text-sm" /> {stamps}
+        <IconMail className="text-sm" /> Lettre · {stamps}
       </button>
     </div>
   )
@@ -625,9 +643,9 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                 >
                   <n.icon className={'text-xl ' + (currentRoute === n.route ? 'text-accent' : '')} />
                   {n.label}
-                  {(n.desktopBadge || (n.kind === 'bookmarks' && bookmarkCount > 0)) && (
+                  {n.kind === 'bookmarks' && bookmarkCount > 0 && (
                     <span className="ml-auto rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-white">
-                      {n.kind === 'bookmarks' ? bookmarkCount : n.desktopBadge}
+                      {bookmarkCount}
                     </span>
                   )}
                 </a>
@@ -701,7 +719,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           </div>
 
           {/* posts */}
-          {DEMO_FEED.map((p) =>
+          {feed.map((p) =>
             'echo' in p ? (
               <article
                 key={p.id}
@@ -735,23 +753,37 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             ) : (
               <article
                 key={p.id}
-                onClick={() => setSelectedPost(p)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') setSelectedPost(p)
+                onClick={() => {
+                  if (!p.pending) setSelectedPost(p)
                 }}
-                tabIndex={0}
+                onKeyDown={(event) => {
+                  if (!p.pending && (event.key === 'Enter' || event.key === ' ')) setSelectedPost(p)
+                }}
+                tabIndex={p.pending ? undefined : 0}
                 className={
-                  panel +
-                  ' mt-4 cursor-pointer p-4.5 first:mt-0 transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:first:mt-4 dark:hover:bg-night-2'
+                  (p.pending
+                    ? 'rounded-2xl border-2 border-dashed border-accent/45 bg-white/70 shadow-none dark:border-accent/35 dark:bg-night-1/70'
+                    : panel + ' cursor-pointer transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-night-2') +
+                  ' mt-4 p-4.5 first:mt-0 lg:first:mt-4'
                 }
               >
-                <div className="flex items-center gap-2.5">
-                  <div
-                    className="flex h-10 w-10 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
-                    style={{ background: p.color }}
-                  >
-                    {p.author.charAt(0)}
+                {p.pending && (
+                  <div className="mb-3 flex items-center gap-2 text-[12px] font-extrabold text-accent dark:text-accent-soft">
+                    <IconSend className="animate-pulse" />
+                    Pris en compte · en cours d’envoi
                   </div>
+                )}
+                <div className="flex items-center gap-2.5">
+                  {p.avatarUrl ? (
+                    <img src={p.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                  ) : (
+                    <div
+                      className="flex h-10 w-10 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
+                      style={{ background: p.color }}
+                    >
+                      {p.author.charAt(0).toUpperCase()}
+                    </div>
+                  )}
                   <div>
                     <b className="text-[15px]">{p.author}</b>
                     <small className={'block text-[13px] ' + mutedText}>
@@ -772,20 +804,20 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   </div>
                 </div>
                 <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
-                <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
+                {!p.pending && <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
                   <button
                     onClick={(event) => {
                       event.stopPropagation()
                       openReply(p)
                     }}
                     title="Répondre à cette note"
-                    aria-label={`Répondre — ${replyTotal(p)} réponses`}
+                    aria-label={`Répondre — ${replyTotal(p)}`}
                     className={
                       'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
                       mutedText
                     }
                   >
-                    <IconReply /> {replyTotal(p)} réponses
+                    <IconReply /> {replyTotal(p)}
                   </button>
                   <button
                     onClick={(event) => {
@@ -793,15 +825,15 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                       openTransmit(p)
                     }}
                     title="Transmettre cette note à vos abonnés"
-                    aria-label={`Transmettre — ${p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions`}
+                    aria-label={`Retransmettre — ${p.transmissions + (transmissionCounts[p.id] ?? 0)}`}
                     className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
                   >
-                    <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)} transmissions
+                    <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)}
                   </button>
                   {pendingTransmissions[p.id] && (
                     <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
                   )}
-                </div>
+                </div>}
                 {replyFor === p.id && (
                   <form
                     className="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3 dark:border-night-line dark:bg-night-2"
@@ -819,6 +851,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                       maxLength={280}
                       className="min-h-[64px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
                     />
+                    {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
                       <div className="flex gap-2">
@@ -862,9 +895,22 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             ),
           )}
 
-          <p className={'py-8 text-center text-[13px] ' + mutedText}>
-            Feed de démonstration · sera branché sur l'API
-          </p>
+          {feedLoading && (
+            <p className={panel + ' mt-4 p-6 text-center text-[13px] ' + mutedText}>
+              Chargement des messages…
+            </p>
+          )}
+          {feedError && !feedLoading && (
+            <div className={panel + ' mt-4 p-6 text-center'}>
+              <p role="alert" className="text-[13px] font-semibold text-red-600 dark:text-red-400">{feedError}</p>
+              <button type="button" onClick={() => void loadFeed()} className="mt-3 text-[13px] font-bold text-accent">Réessayer</button>
+            </div>
+          )}
+          {feed.length === 0 && !feedLoading && !feedError && (
+            <p className={panel + ' mt-4 p-6 text-center text-[13px] ' + mutedText}>
+              Aucun message arrivé pour le moment.
+            </p>
+          )}
             </>
           )}
         </main>
@@ -897,7 +943,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             {/* branches proches */}
             <div className={panel + ' mt-4 p-4.5'}>
               <h3 className="text-[14px] font-bold">Près de vous</h3>
-              {DEMO_BRANCHES.map((b) => (
+              {NEARBY_BRANCHES.map((b) => (
                 <div
                   key={b.name}
                   className="flex cursor-pointer items-center gap-2.5 border-t border-sky-50 py-2.5 first:mt-1 first:border-t-0 dark:border-night-line"
@@ -911,6 +957,9 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   </div>
                 </div>
               ))}
+              {NEARBY_BRANCHES.length === 0 && (
+                <p className={'mt-3 text-[12px] ' + mutedText}>Aucune branche proche.</p>
+              )}
             </div>
           </div>
         </aside>
@@ -1027,9 +1076,29 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             </button>
           </header>
 
-          <p className={'px-4 pt-3 text-[12.5px] font-semibold ' + mutedText}>
-            Partagé avec vos abonnés
-          </p>
+          <div className="px-4 pt-3">
+            <p className={'text-[12.5px] font-semibold ' + mutedText}>Partagé avec vos abonnés</p>
+            <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Mode d’envoi">
+              <button
+                type="button"
+                onClick={() => setCarrier('BIRD')}
+                aria-pressed={carrier === 'BIRD'}
+                className={'flex min-h-14 items-center gap-2.5 rounded-xl border px-3 text-left transition ' + (carrier === 'BIRD' ? 'border-accent bg-accent/12 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-slate-200 dark:border-night-line ' + mutedText)}
+              >
+                <IconBird className="shrink-0 text-lg" />
+                <span><b className="block text-[13px]">Oiseau</b><small>{pigeonsFree} disponible{pigeonsFree > 1 ? 's' : ''}</small></span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCarrier('POST')}
+                aria-pressed={carrier === 'POST'}
+                className={'flex min-h-14 items-center gap-2.5 rounded-xl border px-3 text-left transition ' + (carrier === 'POST' ? 'border-accent bg-accent/12 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-slate-200 dark:border-night-line ' + mutedText)}
+              >
+                <IconMail className="shrink-0 text-lg" />
+                <span><b className="block text-[13px]">Lettre</b><small>{stamps} disponible{stamps > 1 ? 's' : ''}</small></span>
+              </button>
+            </div>
+          </div>
 
           <textarea
             value={text}
@@ -1041,24 +1110,23 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           />
 
           <footer className="border-t border-slate-100 px-4 py-3 pb-[max(env(safe-area-inset-bottom),12px)] dark:border-night-line">
-            <div className="flex items-center gap-2">
-              {carrierToggle}
-              <span className={'ml-auto text-[13px] ' + mutedText}>{text.length}/280</span>
-            </div>
+            <div className="flex justify-end"><span className={'text-[13px] ' + mutedText}>{text.length}/280</span></div>
             {capacityWarning}
           </footer>
         </div>
       )}
 
-      <MobileNavigation
-        currentRoute={currentRoute}
-        bookmarkCount={bookmarkCount}
-        shortcuts={mobileShortcuts}
-        menuItems={NAV}
-        onNavigate={navigate}
-        onOpenMenu={() => setMenuOpen((open) => !open)}
-        menuOpen={menuOpen}
-      />
+      {!composeOpen && (
+        <MobileNavigation
+          currentRoute={currentRoute}
+          bookmarkCount={bookmarkCount}
+          shortcuts={mobileShortcuts}
+          menuItems={NAV}
+          onNavigate={navigate}
+          onOpenMenu={() => setMenuOpen((open) => !open)}
+          menuOpen={menuOpen}
+        />
+      )}
     </div>
   )
 }

@@ -78,9 +78,11 @@ Objectif : supprimer les ambiguïtés qui modifieraient le schéma ou les droits
   réciproques dérivent une amitié et débloquent le cui-to-cui.
 - [ ] Décider si le follow est toujours immédiat ou soumis à acceptation pour
   certains comptes privés.
-- [ ] Définir réponse publique dans une branche, réponse Home et réponse privée.
-- [ ] Définir précisément la transmission : vers Home, branche ou personne,
-  coût et relation au message source.
+- [x] Définir réponse publique dans une branche, réponse Home et réponse privée :
+  la réponse hérite du contexte physique et de visibilité de son parent.
+- [x] Définir précisément la transmission : nouveau message, action et trajet
+  reliés à la source, vers Home, branche ou personne ; chaque transmission
+  consomme sa propre capacité.
 - [ ] Fixer la taille maximale du texte et le traitement des liens.
 - [ ] Décider annulation, suppression et édition après départ. La proposition
   documentée est : brouillon modifiable, contenu figé et non rappelable après

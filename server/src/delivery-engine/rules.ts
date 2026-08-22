@@ -20,8 +20,8 @@ export const DELIVERY_RULES = {
     speedPrecisionKmH: 0.1,
 
     routeFactor: 1.1,
-    flightHoursPerDay: 8,
-    restHoursPerDay: 16,
+    flightHoursPerDay: 12,
+    restHoursPerDay: 12,
   },
 
   post: {
@@ -55,6 +55,12 @@ export const DELIVERY_RULES = {
     saturdayCloseHour: 16,
     saturdayEfficiency: 0.5, // 1 h de traitement = 2 h calendaires
     // Dimanche : fermé. Jours fériés (optionnel MVP) : comme un dimanche.
+  },
+
+  broadcast: {
+    // Bornes mondiales conservatrices pour purger les bitmaps temporaires.
+    birdMaxDays: 60,
+    postMaxDays: 90,
   },
 } as const
 

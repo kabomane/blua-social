@@ -1,9 +1,0 @@
-Natural Earth vector data (public domain)
-https://www.naturalearthdata.com/downloads/
-
-Local files used by mapbox.html:
-- countries.geojson: 1:50m Admin 0 countries
-- countries-110m.geojson: 1:110m Admin 0 countries, optimized for embedded cards
-
-GeoJSON source repository:
-https://github.com/nvkelso/natural-earth-vector

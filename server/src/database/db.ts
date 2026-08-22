@@ -9,7 +9,9 @@ const DATA_DIR = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../../data',
 )
-export const DB_PATH = path.join(DATA_DIR, 'app.db')
+export const DB_PATH = process.env.BLUE_ATMOSPHERE_DB_PATH
+  ? path.resolve(process.env.BLUE_ATMOSPHERE_DB_PATH)
+  : path.join(DATA_DIR, 'app.db')
 
 fs.mkdirSync(DATA_DIR, { recursive: true })
 

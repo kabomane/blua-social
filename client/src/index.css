@@ -63,8 +63,9 @@
 }
 
 /* Mappy est limité aux cartes de suivi: aucune règle de thème globale. */
-.mappy-globe { position: relative; height: 100%; width: 100%; overflow: hidden; }
-.mappy-globe svg { display: block; height: 100%; width: 100%; }
+.mappy-globe { position: relative; height: 100%; width: 100%; overflow: hidden; background: #061f35; }
+.mappy-globe svg { display: block; height: 100%; width: 100%; pointer-events: none; user-select: none; }
+.mappy-current-emoji { paint-order: stroke; stroke: rgb(8 40 63 / .72); stroke-width: 1.5px; }
 .mappy-distance { position: absolute; right: .6rem; bottom: .55rem; border-radius: 9999px; background: rgb(6 29 47 / .78); padding: .2rem .45rem; color: white; font-size: .625rem; font-weight: 700; letter-spacing: .04em; }
 
 @media (prefers-reduced-motion: reduce) {

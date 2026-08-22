@@ -898,7 +898,7 @@ export const DELIVERY_RULES = {
     bird: {
         speedKmH: 45,
         routeFactor: 1.10,
-        flightHoursPerDay: 8,
+        flightHoursPerDay: 12,
         speedVariance: 0.08
     },
 

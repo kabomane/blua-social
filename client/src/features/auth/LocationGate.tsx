@@ -47,7 +47,6 @@ export default function LocationGate({ user, onUpdated, onLogout }: Props) {
         <h1 className="mt-5 text-2xl font-extrabold">Actualiser votre position</h1>
         <p className="mt-2 text-[15px] leading-relaxed text-[#5b7a94] dark:text-zinc-400">Blue Atmosphere a besoin de votre position actuelle pour calculer les trajets et vous montrer les branches proches. Cette vérification est demandée au premier plan, au plus une fois toutes les 24 heures.</p>
         <button type="button" onClick={requestLocation} disabled={state === 'loading'} className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-accent px-5 text-sm font-extrabold text-white disabled:opacity-50"><IconBird />{state === 'loading' ? 'Mise à jour…' : 'Mettre à jour ma position'}</button>
-        {import.meta.env.DEV && !window.isSecureContext && <button type="button" onClick={() => void savePosition(48.8566, 2.3522)} className="mt-3 w-full text-sm font-bold text-[#5b7a94] underline dark:text-zinc-400">Utiliser Paris pour le développement</button>}
         {error && <p role="alert" className="mt-4 text-sm font-semibold text-red-600 dark:text-red-400">{error}</p>}
         <button type="button" onClick={() => void onLogout()} className="mt-6 w-full text-sm font-bold text-[#5b7a94] hover:text-[#1c3d5a] dark:text-zinc-400 dark:hover:text-zinc-100">Se déconnecter</button>
       </section>

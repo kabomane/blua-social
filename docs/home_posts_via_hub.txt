@@ -13,7 +13,7 @@ delivery individuelle par ami. Il n'y a jamais N lignes delivery pour N amis.
 1. PÉRIMÈTRE
 ================================================================================
 
-Cette règle concerne uniquement les publications Home destinées aux amis.
+Cette règle concerne les publications Home et leurs réponses publiques.
 
 Ne sont pas concernées :
 
@@ -29,6 +29,10 @@ Ne sont pas concernées :
 Un post Home a deux phases distinctes :
 
     auteur -> hub le plus proche -> diffusion Home
+
+Une réponse publique à une note Home hérite obligatoirement de ce contexte :
+elle effectue elle aussi auteur -> hub proche, puis une diffusion Home. Le type
+REPLY ne constitue jamais à lui seul une destination physique.
 
 1. L'auteur envoie un seul message au hub géographiquement le plus proche de
    sa position au moment de l'envoi.

@@ -10,7 +10,7 @@
 //    centrée sur 50 — deux tirages seedés `${messageId}:speed:1` et `:speed:2`,
 //    normalized = (r1 + r2) / 2, speed = 40 + normalized × 20 ;
 // 4. flightHours = distance effective / vitesse ;
-// 5. journées de vol : 8 h de vol / 24 h (16 h de repos), sans ajouter le
+// 5. journées de vol : 12 h de vol / 24 h (12 h de repos), sans ajouter le
 //    repos final inutile (voir §10 pour la formule calendaire précise) ;
 // 6. estimatedDeliveryAt = sentAt + calendarHours.
 //
@@ -43,16 +43,22 @@ export function calculateBirdDelivery(
   receiver: GeoPoint,
   messageId: string,
   sentAt: number,
+  targetId = 'destination',
 ): BirdDeliveryResult {
   const rules = DELIVERY_RULES.bird
   const distanceGpsKm = distanceKm(sender, receiver)
   const effectiveDistanceKm = distanceGpsKm * rules.routeFactor
-  const normalized = (seededRandom(`${messageId}:speed:1`) + seededRandom(`${messageId}:speed:2`)) / 2
+  const normalized = (
+    seededRandom(`${messageId}:${targetId}:speed:1`)
+    + seededRandom(`${messageId}:${targetId}:speed:2`)
+  ) / 2
   const effectiveSpeedKmH = Math.round((rules.minSpeedKmH + normalized * (rules.maxSpeedKmH - rules.minSpeedKmH)) * 10) / 10
   const flightHours = effectiveDistanceKm / effectiveSpeedKmH
   const wholeDays = Math.floor(flightHours / rules.flightHoursPerDay)
   const remainingHours = flightHours % rules.flightHoursPerDay
-  const calendarHours = remainingHours === 0
+  const calendarHours = flightHours === 0
+    ? 0
+    : remainingHours === 0
     ? Math.max(0, wholeDays - 1) * 24 + rules.flightHoursPerDay
     : wholeDays * 24 + remainingHours
   return {

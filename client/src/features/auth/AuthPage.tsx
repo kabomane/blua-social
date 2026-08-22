@@ -32,8 +32,6 @@ type GeoState = 'idle' | 'asking' | 'granted' | 'denied'
 
 // Position fictive, réservée aux essais locaux. Ne jamais l'utiliser pour
 // contourner la géolocalisation dans une build de production.
-const DEV_LOCATION = { lat: 48.8566, lon: 2.3522 }
-
 export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
   const [mode, setMode] = useState<'login' | 'signup'>('login')
   // signup : 1 = email + mdp, 2 = @username, 3 = localisation (obligatoire)
@@ -96,7 +94,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
     if (!window.isSecureContext) {
       setGeo('denied')
       setError(
-        "La géolocalisation exige HTTPS sur cette adresse. En local, ouvrez http://localhost:5173 ou utilisez la position de développement.",
+        "La géolocalisation exige HTTPS sur cette adresse. En local, ouvrez https://localhost:5173.",
       )
       return
     }
@@ -118,12 +116,6 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
       },
       { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 },
     )
-  }
-
-  function useDevLocation() {
-    setCoords(DEV_LOCATION)
-    setGeo('granted')
-    setError('')
   }
 
   // étape 1 signup : on vérifie que l'email est libre avant de passer à l'étape 2
@@ -444,15 +436,6 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                   >
                     {geo === 'asking' ? 'Localisation…' : 'Autoriser la localisation'}
                   </button>
-                  {import.meta.env.DEV && !window.isSecureContext && (
-                    <button
-                      type="button"
-                      onClick={useDevLocation}
-                      className="text-sm font-bold text-[#5b7a94] underline hover:text-accent dark:text-zinc-500"
-                    >
-                      Utiliser Paris pour le développement
-                    </button>
-                  )}
                 </>
               )}
             </div>

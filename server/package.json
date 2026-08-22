@@ -9,6 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "db:migrate": "tsx src/database/migrate.ts",
+    "db:repair-contexts": "tsx src/database/repair-contexts.ts",
+    "test": "tsx --test src/**/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

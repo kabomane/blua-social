@@ -382,12 +382,12 @@ VITESSE MOYENNE :
 
 HEURES DE VOL PAR JOUR :
 
-8 heures
+12 heures
 
 
 HEURES DE REPOS PAR JOUR :
 
-16 heures
+12 heures
 
 
 FACTEUR DE DÉTOUR :
@@ -420,9 +420,9 @@ ROBIN = {
 
     speedKmH: 45,
 
-    flightHoursPerDay: 8,
+    flightHoursPerDay: 12,
 
-    restHoursPerDay: 16,
+    restHoursPerDay: 12,
 
     routeFactor: 1.10,
 
@@ -565,12 +565,12 @@ const flightHours =
 
 L'oiseau vole :
 
-8 heures par jour
+12 heures par jour
 
 
 Puis se repose :
 
-16 heures
+12 heures
 
 
 Un moyen simple de calculer :
@@ -580,7 +580,7 @@ FULL_FLIGHT_DAYS
 floor(
     FLIGHT_HOURS
     /
-    8
+    12
 )
 
 
@@ -588,7 +588,7 @@ REMAINING_FLIGHT_HOURS
 =
 FLIGHT_HOURS
 %
-8
+12
 
 
 Exemple :
@@ -596,16 +596,16 @@ Exemple :
 232 heures de vol
 
 
-232 / 8
+232 / 12
 
 =
 
-29 journées de vol
+19,3 journées de vol
 
 
 Cela représente environ :
 
-29 jours calendaires
+environ 19 à 20 jours calendaires
 
 
 Une méthode plus précise peut simuler les journées.
@@ -619,14 +619,14 @@ currentTime = sentAt
 while remainingFlight > 0:
 
     flightToday =
-        min(8, remainingFlight)
+        min(12, remainingFlight)
 
     currentTime += flightToday
 
     remainingFlight -= flightToday
 
     if remainingFlight > 0:
-        currentTime += 16 heures de repos
+        currentTime += 12 heures de repos
 
 
 VERSION SIMPLIFIÉE :
@@ -634,37 +634,37 @@ VERSION SIMPLIFIÉE :
 deliveryHours =
     flightHours
     *
-    (24 / 8)
+    (24 / 12)
 
 
 Donc :
 
 deliveryHours
 =
-flightHours × 3
+flightHours × 2
 
 
 Attention :
 
 Pour le dernier jour,
 il est préférable de ne pas ajouter inutilement
-les 16 heures de repos finales.
+les 12 heures de repos finales.
 
 
 VERSION PLUS PRÉCISE :
 
 fullDays =
-    floor(flightHours / 8)
+    floor(flightHours / 12)
 
 remaining =
-    flightHours % 8
+    flightHours % 12
 
 
 SI remaining = 0 :
 
 calendarHours =
     (fullDays - 1) * 24
-    + 8
+    + 12
 
 
 SINON :
@@ -933,16 +933,16 @@ Temps de vol :
 
 Journées de vol :
 
-133.5 / 8
+133.5 / 12
 
 =
 
-16.7 journées
+11,1 journées
 
 
 Temps réel :
 
-environ 16 à 17 jours
+environ 11 jours
 
 
 ======================================================================
@@ -974,16 +974,16 @@ Temps de vol :
 
 Journées :
 
-232.7 / 8
+232.7 / 12
 
 =
 
-29.1 jours
+19,4 journées
 
 
 Temps final :
 
-environ 29 jours
+environ 19 à 20 jours
 
 
 ======================================================================
@@ -3613,7 +3613,7 @@ EXEMPLE DELIVERY_RULES :
 
         routeFactor: 1.10,
 
-        flightHoursPerDay: 8,
+        flightHoursPerDay: 12,
 
         speedVariance: 0.08
     },
@@ -3836,20 +3836,20 @@ function calculateBirdDelivery(
         floor(
             flightHours
             /
-            8
+            12
         )
 
     remainingHours =
         flightHours
         %
-        8
+        12
 
     if remainingHours == 0:
 
         calendarHours =
             max(
-                8,
-                (fullDays - 1) * 24 + 8
+                12,
+                (fullDays - 1) * 24 + 12
             )
 
     else:
@@ -4390,7 +4390,7 @@ GPS A
 → Haversine
 → ×1.10
 → vitesse environ 45 km/h
-→ maximum 8h de vol/jour
+→ maximum 12h de vol/jour
 → repos
 → date d'arrivée
 
