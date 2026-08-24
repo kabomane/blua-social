@@ -37,6 +37,17 @@ export const sendHome = (userId: string, content: string, method: 'BIRD' | 'POST
     body: JSON.stringify({ userId, content, method, type: 'HOME' }),
   }))
 
+export const sendBranch = (
+  userId: string,
+  branchId: string,
+  content: string,
+  method: 'BIRD' | 'POST',
+) => data<{ capacity: Capacity }>(fetch('/api/deliveries/outbound', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ userId, destinationId: branchId, content, method, type: 'BRANCH' }),
+}))
+
 export const sendReply = (
   userId: string,
   parentMessageId: string,

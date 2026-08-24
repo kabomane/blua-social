@@ -7,7 +7,13 @@ const HEIGHT = 450
 const FIT_PADDING_X = 54
 const FIT_PADDING_Y = 46
 const MIN_LOCAL_SPAN_DEGREES = 0.35
-const countryPalette = ['#234449', '#284D4C', '#203F45', '#2B504E', '#24484A']
+const countryPalette = [
+  'var(--color-map-country-1)',
+  'var(--color-map-country-2)',
+  'var(--color-map-country-3)',
+  'var(--color-map-country-4)',
+  'var(--color-map-country-5)',
+]
 
 interface CountryProperties {
   ADMIN?: string
@@ -160,32 +166,32 @@ export default function MappyPlanisphere({ msg, state, distance, showDistance = 
       <svg viewBox={`0 0 ${canvasWidth} ${HEIGHT}`} preserveAspectRatio="xMidYMid meet" aria-hidden="true">
         <defs>
           <radialGradient id={`water-${svgId}`} cx="48%" cy="42%" r="72%">
-            <stop offset="0" stopColor="#0A314A" />
-            <stop offset="0.58" stopColor="#072A43" />
-            <stop offset="1" stopColor="#061F35" />
+            <stop offset="0" stopColor="var(--color-map-ocean-light)" />
+            <stop offset="0.58" stopColor="var(--color-map-ocean-mid)" />
+            <stop offset="1" stopColor="var(--color-map-ocean)" />
           </radialGradient>
           <clipPath id={`map-clip-${svgId}`}><rect width={canvasWidth} height={HEIGHT} rx="14" /></clipPath>
         </defs>
         <rect width={canvasWidth} height={HEIGHT} fill={`url(#water-${svgId})`} />
         <g clipPath={`url(#map-clip-${svgId})`}>
-          <path d={path({ type: 'Sphere' }) ?? undefined} fill="none" stroke="#456477" strokeWidth="1" />
-          <path d={path(geoGraticule10()) ?? undefined} fill="none" stroke="#6B84A0" strokeOpacity="0.16" strokeWidth="0.7" />
+          <path d={path({ type: 'Sphere' }) ?? undefined} fill="none" stroke="var(--color-map-sphere)" strokeWidth="1" />
+          <path d={path(geoGraticule10()) ?? undefined} fill="none" stroke="var(--color-map-grid)" strokeOpacity="0.16" strokeWidth="0.7" />
           {countries.map((country) => (
             <path
               key={country.properties?.ADM0_A3 || country.properties?.ADMIN}
               d={path(country) ?? undefined}
               fill={countryColor(country)}
-              stroke="#7890A8"
+              stroke="var(--color-map-border)"
               strokeWidth="0.75"
             />
           ))}
-          <rect width={canvasWidth} height={HEIGHT} fill="#020914" fillOpacity="0.34" />
+          <rect width={canvasWidth} height={HEIGHT} fill="var(--color-map-shade)" fillOpacity="var(--map-shade-opacity)" />
           {segments.map((segment, index) => segment.d && (
             <path
               key={index}
               d={segment.d}
               fill="none"
-              stroke="#F7FAFC"
+              stroke="var(--color-map-route)"
               strokeWidth="2.2"
               strokeDasharray="8 7"
               strokeLinecap="round"
@@ -193,7 +199,7 @@ export default function MappyPlanisphere({ msg, state, distance, showDistance = 
           ))}
           {projectedPoints.map((point) => point.xy && (
             <g key={`${point.kind}-${point.id || point.label}-${point.lat}`} transform={`translate(${point.xy[0]} ${point.xy[1]})`}>
-              <circle r={point.kind === 'hub' ? 4 : 5.2} fill="#08283F" stroke="#F7FAFC" strokeWidth="2" />
+              <circle r={point.kind === 'hub' ? 4 : 5.2} fill="var(--color-map-point)" stroke="var(--color-map-route)" strokeWidth="2" />
             </g>
           ))}
           {currentPoint && (
@@ -202,7 +208,7 @@ export default function MappyPlanisphere({ msg, state, distance, showDistance = 
               y={currentPoint[1]}
               textAnchor="middle"
               dominantBaseline="central"
-              fontSize="21"
+              fontSize="var(--text-map-carrier)"
               className="mappy-current-emoji"
             >
               {msg.method === 'BIRD' ? '🐦' : '✉️'}

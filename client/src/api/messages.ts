@@ -4,6 +4,8 @@ export interface FeedReply {
   handle: string
   text: string
   arrivedAt: number
+  method: 'BIRD' | 'POST'
+  pending: boolean
 }
 
 export interface FeedMessage {
@@ -36,6 +38,14 @@ export async function getHomeFeed(userId: string): Promise<FeedMessage[]> {
   const response = await fetch(`/api/messages/feed?userId=${encodeURIComponent(userId)}`)
   const body = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(body.error ?? 'Impossible de charger les messages.')
+  return body.messages as FeedMessage[]
+}
+
+export async function getBranchFeed(userId: string, branchId: string): Promise<FeedMessage[]> {
+  const params = new URLSearchParams({ userId, branchId })
+  const response = await fetch(`/api/messages/branch?${params}`)
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(body.error ?? 'Impossible de charger la branche.')
   return body.messages as FeedMessage[]
 }
 

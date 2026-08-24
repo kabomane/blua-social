@@ -2,10 +2,16 @@ import { useCallback, useEffect, useState, type ComponentType, type SVGProps } f
 import { clearUser, type User } from '../../api/auth'
 import MobileNavigation, {
   type MobileNavDestination,
+  type MobileMenuStyle,
 } from '../../components/MobileNavigation'
-import SecondaryPages from './SecondaryPages'
-import { getCapacity, sendHome, sendReply, sendTransmission } from '../../api/deliveries'
-import { getHomeFeed } from '../../api/messages'
+import MobileTopBar from '../../components/MobileTopBar'
+import FloatingActionButton from '../../components/FloatingActionButton'
+import NoteCard from './NoteCard'
+import SecondaryPages, { type LocalBookmark } from './SecondaryPages'
+import { formatArrivalAge } from './note-utils'
+import { getCapacity, sendBranch, sendHome, sendReply, sendTransmission } from '../../api/deliveries'
+import { getBranchFeed, getHomeFeed, type FeedMessage } from '../../api/messages'
+import type { BranchSummary } from '../../api/branches'
 import { kvGet, kvSet } from '../../lib/blua-local'
 import {
   IconBell,
@@ -17,8 +23,6 @@ import {
   IconMail,
   IconMapPin,
   IconMoon,
-  IconRepeat,
-  IconReply,
   IconSend,
   IconSettings,
   IconSun,
@@ -39,25 +43,14 @@ interface Reply {
   handle: string
   text: string
   age: string
+  method: 'BIRD' | 'POST'
+  pending: boolean
 }
 
-interface Note {
-  id: string
-  author: string
-  handle: string
-  color: string
-  avatarUrl: string | null
-  method: 'BIRD' | 'POST'
-  distance: string
+interface Note extends Omit<LocalBookmark, 'replies'> {
   arrivedAt: number
-  pending: boolean
-  text: string
   transmissions: number
   replies: Reply[]
-}
-
-interface PendingReply extends Reply {
-  method: 'BIRD' | 'POST'
 }
 
 interface BranchEcho {
@@ -67,29 +60,6 @@ interface BranchEcho {
   distance: string
   activity: string
   text: string
-}
-
-function formatArrivalAge(arrivedAt: number, now = new Date()): string {
-  const date = new Date(arrivedAt)
-  const elapsedMs = Math.max(0, now.getTime() - arrivedAt)
-  const minutes = Math.floor(elapsedMs / 60_000)
-  const hours = Math.floor(elapsedMs / 3_600_000)
-  const days = Math.floor(elapsedMs / 86_400_000)
-  const isToday = date.toDateString() === now.toDateString()
-
-  if (isToday && date.getHours() < 6) return 'cette nuit'
-  if (minutes < 1) return 'maintenant'
-  if (minutes < 60) return `${minutes} min`
-  if (isToday) return `${hours}h`
-
-  const yesterday = new Date(now)
-  yesterday.setDate(now.getDate() - 1)
-  if (date.toDateString() === yesterday.toDateString()) return 'hier'
-  if (days < 30) return `${days}j`
-
-  const months = Math.floor(days / 30)
-  if (months < 24) return `${months} mois`
-  return `${Math.floor(months / 12)} ans`
 }
 
 const NEARBY_BRANCHES: { name: string; info: string }[] = []
@@ -103,6 +73,31 @@ function avatarColor(value: string): string {
 function formatDistance(distanceKm: number | null): string {
   if (distanceKm === null) return 'distance inconnue'
   return `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: distanceKm < 10 ? 1 : 0 }).format(distanceKm)} km`
+}
+
+function toNote(message: FeedMessage): Note {
+  return {
+    id: message.id,
+    author: message.author,
+    handle: message.handle,
+    color: avatarColor(message.authorId),
+    avatarUrl: message.avatarUrl,
+    method: message.method,
+    distance: formatDistance(message.distanceKm),
+    arrivedAt: message.arrivedAt,
+    pending: message.pending,
+    text: message.text,
+    transmissions: message.transmissions,
+    replies: message.replies.map((reply) => ({
+      id: reply.id,
+      author: reply.author,
+      handle: reply.handle,
+      text: reply.text,
+      age: formatArrivalAge(reply.arrivedAt),
+      method: reply.method,
+      pending: reply.pending,
+    })),
+  }
 }
 
 type IconCmp = ComponentType<SVGProps<SVGSVGElement>>
@@ -127,6 +122,8 @@ const SHORTCUT_OPTIONS = NAV.filter(
 )
 
 const mobileShortcutsKey = (userId: string) => `pref:mobile-shortcuts:${userId}`
+const mobileMenuStyleKey = (userId: string) => `pref:mobile-menu-style:${userId}`
+const bookmarksKey = (userId: string) => `local:bookmarked-notes:${userId}`
 
 type Carrier = 'BIRD' | 'POST'
 
@@ -139,8 +136,9 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     '/branches',
     '/bookmarks',
   ])
-  const [bookmarkCount] = useState(0)
+  const [bookmarkedNotes, setBookmarkedNotes] = useState<Note[]>([])
   const [menuOpen, setMenuOpen] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<MobileMenuStyle>('bubbles')
   const [text, setText] = useState('')
   const [carrier, setCarrier] = useState<Carrier>('BIRD')
   const [pigeonsFree, setPigeonsFree] = useState(0)
@@ -150,6 +148,10 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   const [feed, setFeed] = useState<(Note | BranchEcho)[]>([])
   const [feedLoading, setFeedLoading] = useState(true)
   const [feedError, setFeedError] = useState('')
+  const [selectedBranch, setSelectedBranch] = useState<BranchSummary | null>(null)
+  const [branchFeed, setBranchFeed] = useState<Note[]>([])
+  const [branchFeedLoading, setBranchFeedLoading] = useState(false)
+  const [branchFeedError, setBranchFeedError] = useState('')
   const [composeOpen, setComposeOpen] = useState(false)
   const [selectedPost, setSelectedPost] = useState<Note | null>(null)
   const [replyFor, setReplyFor] = useState<string | null>(null)
@@ -157,7 +159,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   const [replyText, setReplyText] = useState('')
   const [replyError, setReplyError] = useState('')
   const [actionCarrier, setActionCarrier] = useState<Carrier>('BIRD')
-  const [pendingReplies, setPendingReplies] = useState<Record<string, PendingReply[]>>({})
+  const [pendingReplies, setPendingReplies] = useState<Record<string, Reply[]>>({})
   const [pendingTransmissions, setPendingTransmissions] = useState<Record<string, Carrier>>({})
   const [transmissionCounts, setTransmissionCounts] = useState<Record<string, number>>({})
 
@@ -165,32 +167,36 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     setFeedError('')
     try {
       const messages = await getHomeFeed(user.id)
-      setFeed(messages.map((message) => ({
-        id: message.id,
-        author: message.author,
-        handle: message.handle,
-        color: avatarColor(message.authorId),
-        avatarUrl: message.avatarUrl,
-        method: message.method,
-        distance: formatDistance(message.distanceKm),
-        arrivedAt: message.arrivedAt,
-        pending: message.pending,
-        text: message.text,
-        transmissions: message.transmissions,
-        replies: message.replies.map((reply) => ({
-          id: reply.id,
-          author: reply.author,
-          handle: reply.handle,
-          text: reply.text,
-          age: formatArrivalAge(reply.arrivedAt),
-        })),
-      })))
+      const nextFeed = messages.map(toNote)
+      setFeed(nextFeed)
+      setSelectedPost((selected) => {
+        if (!selected) return null
+        const refreshed = nextFeed.find((message) => !('echo' in message) && message.id === selected.id)
+        return refreshed && !('echo' in refreshed) ? refreshed : selected
+      })
     } catch (cause) {
       setFeedError(cause instanceof Error ? cause.message : 'Impossible de charger les messages.')
     } finally {
       setFeedLoading(false)
     }
   }, [user.id])
+
+  const loadBranchFeed = useCallback(async () => {
+    if (!selectedBranch) return
+    setBranchFeedError('')
+    setBranchFeedLoading(true)
+    try {
+      const nextFeed = (await getBranchFeed(user.id, selectedBranch.id)).map(toNote)
+      setBranchFeed(nextFeed)
+      setSelectedPost((selected) => selected
+        ? nextFeed.find((message) => message.id === selected.id) ?? selected
+        : null)
+    } catch (cause) {
+      setBranchFeedError(cause instanceof Error ? cause.message : 'Impossible de charger la branche.')
+    } finally {
+      setBranchFeedLoading(false)
+    }
+  }, [selectedBranch, user.id])
 
   useEffect(() => {
     void kvGet<[string, string]>(mobileShortcutsKey(user.id)).then((saved) => {
@@ -201,6 +207,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
       ) {
         setShortcutRoutes(saved)
       }
+    })
+    void kvGet<MobileMenuStyle>(mobileMenuStyleKey(user.id)).then((saved) => {
+      if (saved === 'bubbles' || saved === 'sheet') setMenuStyle(saved)
+    })
+    void kvGet<Note[]>(bookmarksKey(user.id)).then((saved) => {
+      setBookmarkedNotes(Array.isArray(saved) ? saved : [])
     })
 
     const handleHistoryNavigation = () => {
@@ -216,6 +228,13 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     const refresh = window.setInterval(() => void loadFeed(), 30_000)
     return () => window.clearInterval(refresh)
   }, [loadFeed])
+
+  useEffect(() => {
+    if (!selectedBranch) return
+    void loadBranchFeed()
+    const refresh = window.setInterval(() => void loadBranchFeed(), 30_000)
+    return () => window.clearInterval(refresh)
+  }, [loadBranchFeed, selectedBranch])
 
   useEffect(() => {
     void getCapacity(user.id).then(({ capacity }) => {
@@ -243,6 +262,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     if (!NAV.some((item) => item.route === route)) return
     if (window.location.pathname !== route) window.history.pushState({}, '', route)
     setCurrentRoute(route)
+    setSelectedBranch(null)
     setSelectedPost(null)
     setComposeOpen(false)
     setMenuOpen(false)
@@ -259,32 +279,61 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
     void kvSet(mobileShortcutsKey(user.id), next)
   }
 
+  function updateMobileMenuStyle(style: MobileMenuStyle) {
+    setMenuStyle(style)
+    setMenuOpen(false)
+    void kvSet(mobileMenuStyleKey(user.id), style)
+  }
+
+  function toggleBookmark(note: Note) {
+    setBookmarkedNotes((current) => {
+      const next = current.some((bookmark) => bookmark.id === note.id)
+        ? current.filter((bookmark) => bookmark.id !== note.id)
+        : [note, ...current]
+      void kvSet(bookmarksKey(user.id), next)
+      return next
+    })
+  }
+
+  function openBookmark(id: string) {
+    const note = bookmarkedNotes.find((bookmark) => bookmark.id === id)
+    if (note) setSelectedPost(note)
+  }
+
   const mobileShortcuts = shortcutRoutes.map(
     (route) => SHORTCUT_OPTIONS.find((item) => item.route === route)!,
   ) as [NavDestination, NavDestination]
+  const currentPageTitle = NAV.find((item) => item.route === currentRoute)?.label ?? 'Home'
+  const bookmarkCount = bookmarkedNotes.length
   const mobileMenuOverlay = menuOpen && (
     <button
       type="button"
       aria-label="Fermer le menu"
       onClick={() => setMenuOpen(false)}
-      className="fixed inset-0 z-45 bg-[#102c43]/55 lg:hidden dark:bg-black/70"
+      className="fixed inset-0 z-45 bg-overlay/55 lg:hidden dark:bg-black/70"
     />
   )
 
   const canSend =
     text.trim().length > 0 && (carrier === 'BIRD' ? pigeonsFree > 0 : stamps > 0)
 
+  const activeFeed = selectedBranch ? branchFeed : feed
+  const activeFeedLoading = selectedBranch ? branchFeedLoading : feedLoading
+  const activeFeedError = selectedBranch ? branchFeedError : feedError
+
   async function send() {
     if (!canSend) return
     setSendError('')
     try {
-      const { capacity } = await sendHome(user.id, text.trim(), carrier)
+      const { capacity } = selectedBranch
+        ? await sendBranch(user.id, selectedBranch.id, text.trim(), carrier)
+        : await sendHome(user.id, text.trim(), carrier)
       setPigeonsFree(capacity.bird.available)
       setStamps(capacity.post.available)
       setInFlight(capacity.bird.busy + capacity.post.busy)
       setText('')
       setComposeOpen(false)
-      await loadFeed()
+      await (selectedBranch ? loadBranchFeed() : loadFeed())
     } catch (error) {
       setSendError(error instanceof Error ? error.message : 'Envoi impossible.')
     }
@@ -341,6 +390,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             text: content,
             age: '',
             method: actionCarrier,
+            pending: true,
           },
         ],
       }))
@@ -377,8 +427,8 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   }
 
   const panel =
-    'rounded-2xl bg-white shadow-[0_4px_14px_rgba(42,157,244,.08)] dark:bg-night-1 dark:shadow-none dark:border dark:border-night-line'
-  const mutedText = 'text-[#5b7a94] dark:text-zinc-500'
+    'rounded-2xl bg-white shadow-card dark:bg-night-1 dark:shadow-none dark:border dark:border-night-line'
+  const mutedText = 'text-ink-muted dark:text-zinc-500'
   const actionCarrierToggle = (
     <div className="flex w-fit items-center gap-0.5 rounded-lg bg-slate-100 p-1 dark:bg-night-2">
       <button
@@ -386,7 +436,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         onClick={() => setActionCarrier('BIRD')}
         title={`Pigeon (${pigeonsFree} disponibles)`}
         aria-label={`Pigeon, ${pigeonsFree} disponibles`}
-        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-[12px] font-bold ' + (actionCarrier === 'BIRD' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
+        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-caption font-bold ' + (actionCarrier === 'BIRD' ? 'bg-white text-accent-strong shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
       >
         <IconBird /> {pigeonsFree}
       </button>
@@ -395,7 +445,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         onClick={() => setActionCarrier('POST')}
         title={`Lettre (${stamps} disponibles)`}
         aria-label={`Lettre, ${stamps} disponibles`}
-        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-[12px] font-bold ' + (actionCarrier === 'POST' ? 'bg-white text-[#1272b8] shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
+        className={'flex h-8 min-w-10 items-center justify-center gap-1 rounded-md px-2 text-caption font-bold ' + (actionCarrier === 'POST' ? 'bg-white text-accent-strong shadow-sm dark:bg-night-1 dark:text-accent-soft' : mutedText)}
       >
         <IconMail /> {stamps}
       </button>
@@ -408,80 +458,34 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
       .filter((reply, index, replies) => replies.findIndex((candidate) => candidate.id === reply.id) === index)
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
+      <div className={'min-h-dvh bg-gradient-to-b from-sky-strong via-sky-soft to-page text-ink dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100' + (selectedBranch ? ' branch-theme' : '')}>
         {mobileMenuOverlay}
-        <header className="sticky top-0 z-30 border-b border-white/50 bg-white/85 backdrop-blur dark:border-night-line dark:bg-night-0/90">
-          <div className="mx-auto flex max-w-[720px] items-center gap-3 px-4 py-3">
-            <button
-              onClick={() => {
-                setSelectedPost(null)
-                closeActionComposer()
-              }}
-              className={'rounded-full px-3 py-2 text-sm font-bold hover:bg-sky-50 dark:hover:bg-night-2 ' + mutedText}
-            >
-              ← Home
-            </button>
-            <b className="text-[17px]">Note</b>
-            <div className={'ml-auto flex items-center gap-3 text-[13px] font-bold ' + mutedText}>
-              <span className="flex items-center gap-1" title="Pigeons disponibles">
-                <IconBird className="text-base" /> {pigeonsFree}
-              </span>
-              <span className="flex items-center gap-1" title="Lettres disponibles">
-                <IconMail className="text-base" /> {stamps}
-              </span>
-            </div>
-          </div>
-        </header>
+        <MobileTopBar
+          backLabel={selectedBranch ? 'Branche' : currentPageTitle}
+          onBack={() => {
+            setSelectedPost(null)
+            closeActionComposer()
+          }}
+          pigeonsFree={pigeonsFree}
+          stamps={stamps}
+        />
 
         <main className="mx-auto max-w-[720px] px-4 py-5 pb-32 lg:pb-12">
-          <article className={panel + ' p-4.5'}>
-            <div className="flex items-start gap-3">
-              {selectedPost.avatarUrl ? (
-                <img src={selectedPost.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
-              ) : (
-                <div
-                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
-                  style={{ background: selectedPost.color }}
-                >
-                  {selectedPost.author.charAt(0).toUpperCase()}
-                </div>
-              )}
-              <div>
-                <b className="block text-[15px]">{selectedPost.author}</b>
-                <small className={mutedText}>@{selectedPost.handle}</small>
-              </div>
-              <div className={'ml-auto flex items-center gap-1.5 text-[12px] whitespace-nowrap ' + mutedText}>
-                {selectedPost.method === 'BIRD' ? <IconBird /> : <IconMail />}
-                <span>{formatArrivalAge(selectedPost.arrivedAt)} · {selectedPost.distance}</span>
-              </div>
-            </div>
-            <p className="my-4 text-[16px] leading-relaxed">{selectedPost.text}</p>
-            <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
-              <button
-                onClick={() => openReply(selectedPost)}
-                title="Répondre à cette note"
-                aria-label={`Répondre — ${replyCount}`}
-                className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
-              >
-                <IconReply /> {replyCount}
-              </button>
-              <button
-                onClick={() => openTransmit(selectedPost)}
-                title="Retransmettre cette note"
-                aria-label={`Retransmettre — ${selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)}`}
-                className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
-              >
-                <IconRepeat /> {selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)}
-              </button>
-              {pendingTransmissions[selectedPost.id] && (
-                <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
-              )}
-            </div>
-          </article>
+          <NoteCard
+            note={selectedPost}
+            age={formatArrivalAge(selectedPost.arrivedAt)}
+            replyCount={replyCount}
+            transmissionCount={selectedPost.transmissions + (transmissionCounts[selectedPost.id] ?? 0)}
+            transmissionPending={!!pendingTransmissions[selectedPost.id]}
+            bookmarked={bookmarkedNotes.some((bookmark) => bookmark.id === selectedPost.id)}
+            onReply={() => openReply(selectedPost)}
+            onTransmit={() => openTransmit(selectedPost)}
+            onToggleBookmark={() => toggleBookmark(selectedPost)}
+          />
 
           <section className="mt-6">
             <div className="flex items-center gap-3">
-              <b className="text-[15px]">Conversation · {replyCount} réponses</b>
+              <b className="text-control">Conversation · {replyCount} réponses</b>
             </div>
 
             {replyFor === selectedPost.id && (
@@ -498,14 +502,14 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   onChange={(event) => setReplyText(event.target.value)}
                   placeholder={`Répondre à ${selectedPost.author}…`}
                   maxLength={280}
-                  className="min-h-[72px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                  className="min-h-composer-open w-full resize-none bg-transparent text-body outline-none placeholder:text-ink-muted/70 dark:placeholder:text-zinc-600"
                 />
-                {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
+                {replyError && <p role="alert" className="mt-2 text-caption font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
-                    <button type="button" onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
-                    <button type="submit" disabled={!replyText.trim() || !carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Répondre</button>
+                    <button type="button" onClick={closeActionComposer} className={'px-2 py-2 text-meta font-bold ' + mutedText}>Annuler</button>
+                    <button type="submit" disabled={!replyText.trim() || !carrierAvailable(actionCarrier)} className="rounded-lg bg-accent px-3 py-2 text-meta font-extrabold text-white disabled:opacity-40">Répondre</button>
                   </div>
                 </div>
               </form>
@@ -517,12 +521,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   <b className="block text-sm">Transmettre à vos abonnés</b>
                   <small className={mutedText}>Votre envoi suivra son propre trajet.</small>
                 </div>
-                {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
+                {replyError && <p role="alert" className="mt-2 text-caption font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                   {actionCarrierToggle}
                   <div className="flex gap-2">
-                    <button onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
-                    <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                    <button onClick={closeActionComposer} className={'px-2 py-2 text-meta font-bold ' + mutedText}>Annuler</button>
+                    <button onClick={() => submitTransmit(selectedPost)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[selectedPost.id]} className="rounded-lg bg-accent px-3 py-2 text-meta font-extrabold text-white disabled:opacity-40">Transmettre</button>
                   </div>
                 </div>
               </div>
@@ -530,16 +534,18 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
 
             <div className="mt-5 space-y-4">
               {visibleReplies.map((reply) => (
-                <article key={reply.id} className={'border-l-2 pl-3 ' + ('method' in reply ? 'border-dashed border-accent opacity-70' : 'border-sky-200 dark:border-night-line')}>
+                <article key={reply.id} className={'border-l-2 pl-3 ' + (reply.pending ? 'border-dashed border-accent opacity-70' : 'border-sky-200 dark:border-night-line')}>
                   <div className="flex flex-wrap items-baseline gap-1.5 text-sm">
                     <b>{reply.author}</b>
-                    {'method' in reply ? (
-                      <span className={'flex items-center gap-1 ' + mutedText} title="Livraison en cours">@{reply.handle} {reply.method === 'BIRD' ? <IconBird /> : <IconMail />}</span>
+                    {reply.pending ? (
+                      <span className={'flex items-center gap-1 ' + mutedText} title="Livraison en cours">
+                        @{reply.handle} · {reply.method === 'BIRD' ? <IconBird /> : <IconMail />} En cours d’envoi
+                      </span>
                     ) : (
                       <span className={mutedText}>@{reply.handle} · {reply.age}</span>
                     )}
                   </div>
-                  <p className="mt-1 text-[14px] leading-relaxed">{reply.text}</p>
+                  <p className="mt-1 text-label leading-relaxed">{reply.text}</p>
                 </article>
               ))}
             </div>
@@ -554,6 +560,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           onNavigate={navigate}
           onOpenMenu={() => setMenuOpen((open) => !open)}
           menuOpen={menuOpen}
+          menuStyle={menuStyle}
         />
       </div>
     )
@@ -568,7 +575,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         aria-pressed={carrier === 'BIRD'}
         title={`Pigeon — rapide sur courte distance (${pigeonsFree} disponibles)`}
         className={
-          'flex min-h-[38px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-extrabold transition ' +
+          'flex min-h-10 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-meta font-extrabold transition ' +
           (carrier === 'BIRD' ? 'bg-accent text-white' : mutedText)
         }
       >
@@ -580,7 +587,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         aria-pressed={carrier === 'POST'}
         title={`Lettre — efficace sur longue distance (${stamps} timbres)`}
         className={
-          'flex min-h-[38px] items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[13px] font-extrabold transition ' +
+          'flex min-h-10 items-center gap-1.5 rounded-full px-3.5 py-1.5 text-meta font-extrabold transition ' +
           (carrier === 'POST' ? 'bg-accent text-white' : mutedText)
         }
       >
@@ -590,7 +597,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   )
 
   const capacityWarning = !canSend && text.trim().length > 0 && (
-    <p className="mt-2 text-[12.5px] font-semibold text-amber-600 dark:text-amber-400">
+    <p className="mt-2 text-meta font-semibold text-amber-600 dark:text-amber-400">
       {carrier === 'BIRD'
         ? 'Aucun pigeon disponible — attendez un retour ou envoyez une lettre.'
         : 'Aucun timbre disponible — attendez le réassort ou envoyez un pigeon.'}
@@ -598,21 +605,31 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
   )
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-sky-strong via-sky-soft to-[#f6fbff] text-[#1c3d5a] transition-colors dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100">
+    <div className={'min-h-dvh bg-gradient-to-b from-sky-strong via-sky-soft to-page text-ink transition-colors dark:from-night-0 dark:via-night-0 dark:to-night-0 dark:text-zinc-100' + (selectedBranch ? ' branch-theme' : '')}>
       {mobileMenuOverlay}
       {/* ================= HEADER MOBILE ================= */}
-      <header className="sticky top-0 z-30 flex items-center gap-3 border-b border-white/50 bg-white/80 px-4 py-3 backdrop-blur lg:hidden dark:border-night-line dark:bg-night-0/85">
-        <IconBird className="text-xl text-accent" />
-        <b className="text-[17px] font-extrabold">Blue Atmosphere</b>
-        <div className={'ml-auto flex items-center gap-3 text-[13px] font-bold ' + mutedText}>
-          <span className="flex items-center gap-1">
-            <IconBird className="text-base" /> {pigeonsFree}
-          </span>
-          <span className="flex items-center gap-1">
-            <IconMail className="text-base" /> {stamps}
-          </span>
-        </div>
-      </header>
+      {currentRoute !== '/settings' && (selectedBranch ? (
+        <MobileTopBar
+          title={selectedBranch.name}
+          backLabel="Branches"
+          onBack={() => {
+            setSelectedBranch(null)
+            setSelectedPost(null)
+            setComposeOpen(false)
+            window.scrollTo({ top: 0, behavior: 'smooth' })
+          }}
+          pigeonsFree={pigeonsFree}
+          stamps={stamps}
+          mobileOnly
+        />
+      ) : (
+        <MobileTopBar
+          title={currentPageTitle}
+          pigeonsFree={pigeonsFree}
+          stamps={stamps}
+          mobileOnly
+        />
+      ))}
 
       <div
         className="mobile-nav-safe-padding mx-auto grid max-w-[1240px] grid-cols-1 gap-6 p-4 lg:grid-cols-[250px_1fr_310px] lg:gap-10 lg:px-8"
@@ -620,7 +637,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         {/* ================= NAV GAUCHE (fixe) ================= */}
         <aside className="hidden lg:block">
           <div className="sticky top-0 flex h-screen flex-col pt-8 pb-10">
-            <div className="flex items-center gap-2.5 px-3.5 py-2.5 text-[21px] font-extrabold">
+            <div className="flex items-center gap-2.5 px-3.5 py-2.5 text-brand font-extrabold">
               <IconBird className="text-accent" /> Blue Atmosphere
             </div>
 
@@ -635,9 +652,9 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                     navigate(n.route)
                   }}
                   className={
-                    'my-1 flex items-center gap-3.5 rounded-full px-4 py-3 text-[15.5px] font-semibold transition ' +
+                    'my-1 flex items-center gap-3.5 rounded-full px-4 py-3 text-body font-semibold transition ' +
                     (currentRoute === n.route
-                      ? 'bg-white shadow-[0_4px_14px_rgba(42,157,244,.18)] dark:bg-night-2 dark:shadow-none'
+                      ? 'bg-white shadow-card-active dark:bg-night-2 dark:shadow-none'
                       : 'hover:bg-white/70 dark:hover:bg-night-2/60')
                   }
                 >
@@ -657,7 +674,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
               {user.avatarUrl ? (
                 <img src={user.avatarUrl} alt="Photo de profil" className="h-10 w-10 shrink-0 rounded-full object-cover" />
               ) : (
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-[15px] font-extrabold text-white">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent text-control font-extrabold text-white">
                   {user.username.charAt(0).toUpperCase()}
                 </div>
               )}
@@ -689,10 +706,48 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
 
         {/* ================= FEED ================= */}
         <main className="lg:py-8">
-          {currentRoute !== '/home' && currentRoute !== '/settings' ? (
-            <SecondaryPages route={currentRoute} user={user} onUserUpdate={onUserUpdate} />
+          {currentRoute !== '/home' && currentRoute !== '/settings' && !selectedBranch ? (
+            <SecondaryPages
+              route={currentRoute}
+              user={user}
+              onUserUpdate={onUserUpdate}
+              bookmarks={bookmarkedNotes}
+              onOpenBookmark={openBookmark}
+              onReplyBookmark={(id) => {
+                const note = bookmarkedNotes.find((bookmark) => bookmark.id === id)
+                if (note) openReply(note)
+              }}
+              onTransmitBookmark={(id) => {
+                const note = bookmarkedNotes.find((bookmark) => bookmark.id === id)
+                if (note) openTransmit(note)
+              }}
+              onToggleBookmark={(id) => {
+                const note = bookmarkedNotes.find((bookmark) => bookmark.id === id)
+                if (note) toggleBookmark(note)
+              }}
+              onOpenBranch={(branch) => {
+                setSelectedBranch(branch)
+                setSelectedPost(null)
+                setComposeOpen(false)
+                setBranchFeed([])
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            />
           ) : (
             <>
+          {selectedBranch && (
+            <header className="mb-4 hidden items-center gap-3 lg:flex">
+              <button
+                type="button"
+                onClick={() => setSelectedBranch(null)}
+                className={'min-h-11 rounded-full px-3 text-meta font-bold hover:bg-white dark:hover:bg-night-2 ' + mutedText}
+              >
+                ← Branches
+              </button>
+              <IconBranch className="text-xl text-accent" />
+              <h1 className="truncate text-title font-extrabold">{selectedBranch.name}</h1>
+            </header>
+          )}
           {/* compose inline — desktop uniquement.
               La Home publie vers les abonnés : pas de choix de destination ici. */}
           <div className={panel + ' hidden p-4.5 lg:block'}>
@@ -700,26 +755,26 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
               value={text}
               onChange={(e) => setText(e.target.value)}
               maxLength={280}
-              placeholder="Partager quelque chose avec vos abonnés…"
-              className="min-h-[64px] w-full resize-none bg-transparent text-[16.5px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+              placeholder={selectedBranch ? `Partager dans ${selectedBranch.name}…` : 'Partager quelque chose avec vos abonnés…'}
+              className="min-h-composer w-full resize-none bg-transparent text-body outline-none placeholder:text-ink-muted/70 dark:placeholder:text-zinc-600"
             />
             <div className="mt-2.5 flex flex-wrap items-center gap-2">
               {carrierToggle}
-              <span className={'ml-auto text-[13px] ' + mutedText}>{text.length}/280</span>
+              <span className={'ml-auto text-meta ' + mutedText}>{text.length}/280</span>
               <button
                 onClick={send}
                 disabled={!canSend}
-                className="rounded-full bg-accent px-5 py-2.5 text-[14.5px] font-extrabold text-white transition enabled:hover:-translate-y-0.5 enabled:hover:shadow-lg enabled:hover:shadow-accent/40 disabled:opacity-40"
+                className="rounded-full bg-accent px-5 py-2.5 text-control font-extrabold text-white transition enabled:hover:-translate-y-0.5 enabled:hover:shadow-lg enabled:hover:shadow-accent/40 disabled:opacity-40"
               >
                 Envoyer
               </button>
             </div>
             {capacityWarning}
-            {sendError && <p role="alert" className="mt-2 text-[12.5px] font-semibold text-red-600 dark:text-red-400">{sendError}</p>}
+            {sendError && <p role="alert" className="mt-2 text-meta font-semibold text-red-600 dark:text-red-400">{sendError}</p>}
           </div>
 
           {/* posts */}
-          {feed.map((p) =>
+          {activeFeed.map((p) =>
             'echo' in p ? (
               <article
                 key={p.id}
@@ -730,13 +785,13 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                     <IconBranch className="text-lg" />
                   </div>
                   <div>
-                    <span className="text-[11px] font-extrabold tracking-widest text-emerald-600 dark:text-emerald-400">
+                    <span className="text-nav font-extrabold tracking-widest text-emerald-600 dark:text-emerald-400">
                       ÉCHO D'UNE BRANCHE · {p.distance?.toUpperCase()}
                     </span>
-                    <b className="block text-[16px]">{p.branch}</b>
+                    <b className="block text-body">{p.branch}</b>
                   </div>
                 </div>
-                <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
+                <p className="my-3 text-control leading-relaxed">{p.text}</p>
                 <div className="flex items-center gap-3">
                   <small className={'min-w-0 flex-1 truncate ' + mutedText}>
                     <b>{p.activity}</b>
@@ -744,96 +799,26 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                   <button
                     type="button"
                     onClick={() => navigate('/branches')}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-[12px] font-extrabold text-emerald-700 transition hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-900 dark:bg-night-1 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
+                    className="shrink-0 whitespace-nowrap rounded-full border border-emerald-200 bg-white px-3 py-1.5 text-caption font-extrabold text-emerald-700 transition hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-900 dark:bg-night-1 dark:text-emerald-400 dark:hover:bg-emerald-950/30"
                   >
                     Voir la branche
                   </button>
                 </div>
               </article>
             ) : (
-              <article
-                key={p.id}
-                onClick={() => {
-                  if (!p.pending) setSelectedPost(p)
-                }}
-                onKeyDown={(event) => {
-                  if (!p.pending && (event.key === 'Enter' || event.key === ' ')) setSelectedPost(p)
-                }}
-                tabIndex={p.pending ? undefined : 0}
-                className={
-                  (p.pending
-                    ? 'rounded-2xl border-2 border-dashed border-accent/45 bg-white/70 shadow-none dark:border-accent/35 dark:bg-night-1/70'
-                    : panel + ' cursor-pointer transition hover:shadow-[0_8px_24px_rgba(42,157,244,.14)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent dark:hover:bg-night-2') +
-                  ' mt-4 p-4.5 first:mt-0 lg:first:mt-4'
-                }
-              >
-                {p.pending && (
-                  <div className="mb-3 flex items-center gap-2 text-[12px] font-extrabold text-accent dark:text-accent-soft">
-                    <IconSend className="animate-pulse" />
-                    Pris en compte · en cours d’envoi
-                  </div>
-                )}
-                <div className="flex items-center gap-2.5">
-                  {p.avatarUrl ? (
-                    <img src={p.avatarUrl} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
-                  ) : (
-                    <div
-                      className="flex h-10 w-10 items-center justify-center rounded-full text-[15px] font-extrabold text-white"
-                      style={{ background: p.color }}
-                    >
-                      {p.author.charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  <div>
-                    <b className="text-[15px]">{p.author}</b>
-                    <small className={'block text-[13px] ' + mutedText}>
-                      @{p.handle}
-                    </small>
-                  </div>
-                  {/* méta compacte : une seule ligne */}
-                  <div
-                    className={
-                      'ml-auto flex items-center gap-1.5 text-[12px] whitespace-nowrap ' +
-                      mutedText
-                    }
-                  >
-                    {p.method === 'BIRD' ? <IconBird /> : <IconMail />}
-                    <span>
-                    {formatArrivalAge(p.arrivedAt)} · {p.distance}
-                    </span>
-                  </div>
-                </div>
-                <p className="my-3 text-[15px] leading-relaxed">{p.text}</p>
-                {!p.pending && <div className="mt-4 flex items-center gap-5 border-t border-sky-100 pt-2.5 dark:border-night-line">
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openReply(p)
-                    }}
-                    title="Répondre à cette note"
-                    aria-label={`Répondre — ${replyTotal(p)}`}
-                    className={
-                      'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' +
-                      mutedText
-                    }
-                  >
-                    <IconReply /> {replyTotal(p)}
-                  </button>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openTransmit(p)
-                    }}
-                    title="Transmettre cette note à vos abonnés"
-                    aria-label={`Retransmettre — ${p.transmissions + (transmissionCounts[p.id] ?? 0)}`}
-                    className={'flex min-h-[36px] items-center gap-1.5 rounded-full px-2 py-1 text-[13px] font-bold transition hover:bg-sky-50 hover:text-[#1272b8] dark:hover:bg-night-2 ' + mutedText}
-                  >
-                    <IconRepeat /> {p.transmissions + (transmissionCounts[p.id] ?? 0)}
-                  </button>
-                  {pendingTransmissions[p.id] && (
-                    <span title="Transmission en cours vers le hub" className={'ml-auto ' + mutedText}><IconSend className="text-[13px]" /></span>
-                  )}
-                </div>}
+              <div key={p.id} className="mt-4 first:mt-0 lg:first:mt-4">
+                <NoteCard
+                  note={p}
+                  age={formatArrivalAge(p.arrivedAt)}
+                  replyCount={replyTotal(p)}
+                  transmissionCount={p.transmissions + (transmissionCounts[p.id] ?? 0)}
+                  transmissionPending={!!pendingTransmissions[p.id]}
+                  bookmarked={bookmarkedNotes.some((bookmark) => bookmark.id === p.id)}
+                  onOpen={p.pending ? undefined : () => setSelectedPost(p)}
+                  onReply={() => openReply(p)}
+                  onTransmit={() => openTransmit(p)}
+                  onToggleBookmark={() => toggleBookmark(p)}
+                />
                 {replyFor === p.id && (
                   <form
                     className="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3 dark:border-night-line dark:bg-night-2"
@@ -849,23 +834,23 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                       onChange={(event) => setReplyText(event.target.value)}
                       placeholder={`Répondre à ${p.author}…`}
                       maxLength={280}
-                      className="min-h-[64px] w-full resize-none bg-transparent text-[16px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+                      className="min-h-composer w-full resize-none bg-transparent text-body outline-none placeholder:text-ink-muted/70 dark:placeholder:text-zinc-600"
                     />
-                    {replyError && <p role="alert" className="mt-2 text-[12px] font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
+                    {replyError && <p role="alert" className="mt-2 text-caption font-semibold text-red-600 dark:text-red-400">{replyError}</p>}
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
                       <div className="flex gap-2">
                       <button
                         type="button"
                         onClick={closeActionComposer}
-                        className={'px-2 py-2 text-[13px] font-bold ' + mutedText}
+                        className={'px-2 py-2 text-meta font-bold ' + mutedText}
                       >
                         Annuler
                       </button>
                       <button
                         type="submit"
                         disabled={!replyText.trim() || !carrierAvailable(actionCarrier)}
-                        className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40"
+                        className="rounded-lg bg-accent px-3 py-2 text-meta font-extrabold text-white disabled:opacity-40"
                       >
                         Répondre
                       </button>
@@ -879,36 +864,36 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                     onClick={(event) => event.stopPropagation()}
                   >
                     <div>
-                      <b className="block text-[13px]">Transmettre à vos abonnés</b>
+                      <b className="block text-meta">Transmettre à vos abonnés</b>
                       <small className={mutedText}>Chaque abonné recevra la note après son trajet.</small>
                     </div>
                     <div className="mt-3 flex items-center justify-between gap-2 border-t border-sky-100 pt-3 dark:border-night-line">
                       {actionCarrierToggle}
                       <div className="flex gap-2">
-                        <button onClick={closeActionComposer} className={'px-2 py-2 text-[13px] font-bold ' + mutedText}>Annuler</button>
-                        <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-3 py-2 text-[13px] font-extrabold text-white disabled:opacity-40">Transmettre</button>
+                        <button onClick={closeActionComposer} className={'px-2 py-2 text-meta font-bold ' + mutedText}>Annuler</button>
+                        <button onClick={() => submitTransmit(p)} disabled={!carrierAvailable(actionCarrier) || !!pendingTransmissions[p.id]} className="rounded-lg bg-accent px-3 py-2 text-meta font-extrabold text-white disabled:opacity-40">Transmettre</button>
                       </div>
                     </div>
                   </div>
                 )}
-              </article>
+              </div>
             ),
           )}
 
-          {feedLoading && (
-            <p className={panel + ' mt-4 p-6 text-center text-[13px] ' + mutedText}>
+          {activeFeedLoading && (
+            <p className={panel + ' mt-4 p-6 text-center text-meta ' + mutedText}>
               Chargement des messages…
             </p>
           )}
-          {feedError && !feedLoading && (
+          {activeFeedError && !activeFeedLoading && (
             <div className={panel + ' mt-4 p-6 text-center'}>
-              <p role="alert" className="text-[13px] font-semibold text-red-600 dark:text-red-400">{feedError}</p>
-              <button type="button" onClick={() => void loadFeed()} className="mt-3 text-[13px] font-bold text-accent">Réessayer</button>
+              <p role="alert" className="text-meta font-semibold text-red-600 dark:text-red-400">{activeFeedError}</p>
+              <button type="button" onClick={() => void (selectedBranch ? loadBranchFeed() : loadFeed())} className="mt-3 text-meta font-bold text-accent">Réessayer</button>
             </div>
           )}
-          {feed.length === 0 && !feedLoading && !feedError && (
-            <p className={panel + ' mt-4 p-6 text-center text-[13px] ' + mutedText}>
-              Aucun message arrivé pour le moment.
+          {activeFeed.length === 0 && !activeFeedLoading && !activeFeedError && (
+            <p className={panel + ' mt-4 p-6 text-center text-meta ' + mutedText}>
+              {selectedBranch ? 'Aucune note dans cette branche.' : 'Aucun message arrivé pour le moment.'}
             </p>
           )}
             </>
@@ -920,29 +905,29 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           <div className="sticky top-0 py-8">
             {/* compteurs d'état simples */}
             <div className={panel + ' p-4.5'}>
-              <h3 className="mb-3 text-[14px] font-bold">Capacité d'envoi</h3>
+              <h3 className="mb-3 text-label font-bold">Capacité d'envoi</h3>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-xl bg-sky-50 py-3 dark:bg-night-2">
                   <IconBird className="mx-auto text-xl text-accent" />
                   <b className="mt-1 block text-lg">{pigeonsFree}</b>
-                  <small className={'text-[11px] ' + mutedText}>pigeons</small>
+                  <small className={'text-nav ' + mutedText}>pigeons</small>
                 </div>
                 <div className="rounded-xl bg-sky-50 py-3 dark:bg-night-2">
                   <IconMail className="mx-auto text-xl text-accent" />
                   <b className="mt-1 block text-lg">{stamps}</b>
-                  <small className={'text-[11px] ' + mutedText}>timbres</small>
+                  <small className={'text-nav ' + mutedText}>timbres</small>
                 </div>
                 <div className="rounded-xl bg-sky-50 py-3 dark:bg-night-2">
                   <IconSend className="mx-auto text-xl text-amber-500" />
                   <b className="mt-1 block text-lg">{inFlight}</b>
-                  <small className={'text-[11px] ' + mutedText}>en route</small>
+                  <small className={'text-nav ' + mutedText}>en route</small>
                 </div>
               </div>
             </div>
 
             {/* branches proches */}
             <div className={panel + ' mt-4 p-4.5'}>
-              <h3 className="text-[14px] font-bold">Près de vous</h3>
+              <h3 className="text-label font-bold">Près de vous</h3>
               {NEARBY_BRANCHES.map((b) => (
                 <div
                   key={b.name}
@@ -950,7 +935,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                 >
                   <IconMapPin className={'shrink-0 text-lg ' + mutedText} />
                   <div>
-                    <b className="block text-sm hover:text-[#1272b8] dark:hover:text-accent-soft">
+                    <b className="block text-sm hover:text-accent-strong dark:hover:text-accent-soft">
                       {b.name}
                     </b>
                     <small className={'text-xs ' + mutedText}>{b.info}</small>
@@ -958,7 +943,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                 </div>
               ))}
               {NEARBY_BRANCHES.length === 0 && (
-                <p className={'mt-3 text-[12px] ' + mutedText}>Aucune branche proche.</p>
+                <p className={'mt-3 text-caption ' + mutedText}>Aucune branche proche.</p>
               )}
             </div>
           </div>
@@ -969,7 +954,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
         <section
           aria-labelledby="settings-title"
           className={
-            'fixed inset-0 z-40 bg-[#f6fbff] px-4 pt-5 dark:bg-night-0 lg:pt-10 ' +
+            'fixed inset-0 z-40 bg-page px-4 pt-5 dark:bg-night-0 lg:pt-10 ' +
             (menuOpen ? 'touch-none overflow-hidden' : 'overflow-y-auto')
           }
           style={{ paddingBottom: 'calc(66px + max(12px, env(safe-area-inset-bottom)) + 28px)' }}
@@ -991,13 +976,13 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             <div className={panel + ' divide-y divide-sky-100 overflow-hidden dark:divide-night-line'}>
               <div className="flex items-center justify-between gap-4 p-4.5">
                 <div>
-                  <b className="block text-[15px]">Apparence</b>
+                  <b className="block text-control">Apparence</b>
                   <small className={mutedText}>{dark ? 'Mode sombre' : 'Mode clair'}</small>
                 </div>
                 <button
                   type="button"
                   onClick={toggleDark}
-                  className="flex min-h-11 items-center gap-2 rounded-full bg-sky-50 px-4 text-sm font-bold text-[#1272b8] dark:bg-night-2 dark:text-accent-soft"
+                  className="flex min-h-11 items-center gap-2 rounded-full bg-sky-50 px-4 text-sm font-bold text-accent-strong dark:bg-night-2 dark:text-accent-soft"
                 >
                   {dark ? <IconSun /> : <IconMoon />}
                   Changer
@@ -1005,18 +990,18 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
               </div>
 
               <fieldset className="p-4.5">
-                <legend className="text-[15px] font-bold">Navigation mobile</legend>
-                <p className={'mt-1 text-[13px] ' + mutedText}>
+                <legend className="text-control font-bold">Navigation mobile</legend>
+                <p className={'mt-1 text-meta ' + mutedText}>
                   Choisissez les deux raccourcis affichés au centre de la barre.
                 </p>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   {([0, 1] as const).map((index) => (
-                    <label key={index} className="text-[13px] font-bold">
+                    <label key={index} className="text-meta font-bold">
                       Raccourci {index + 1}
                       <select
                         value={shortcutRoutes[index]}
                         onChange={(event) => setMobileShortcut(index, event.target.value)}
-                        className="mt-1.5 min-h-11 w-full rounded-xl border border-sky-100 bg-sky-50 px-3 text-[#1c3d5a] outline-none focus:border-accent dark:border-night-line dark:bg-night-2 dark:text-zinc-100"
+                        className="mt-1.5 min-h-11 w-full rounded-xl border border-sky-100 bg-sky-50 px-3 text-ink outline-none focus:border-accent dark:border-night-line dark:bg-night-2 dark:text-zinc-100"
                       >
                         {SHORTCUT_OPTIONS.map((option) => (
                           <option key={option.route} value={option.route}>
@@ -1027,10 +1012,41 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                     </label>
                   ))}
                 </div>
+                <div className="mt-5 border-t border-sky-100 pt-4 dark:border-night-line">
+                  <b className="text-meta">Style du menu</b>
+                  <div className="mt-2 grid grid-cols-2 gap-2" role="group" aria-label="Style du menu mobile">
+                    <button
+                      type="button"
+                      aria-pressed={menuStyle === 'bubbles'}
+                      onClick={() => updateMobileMenuStyle('bubbles')}
+                      className={'min-h-20 rounded-xl border p-3 text-left transition ' + (menuStyle === 'bubbles' ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-sky-100 bg-sky-50 text-ink dark:border-night-line dark:bg-night-2 dark:text-zinc-200')}
+                    >
+                      <span className="mb-2 flex items-end gap-1" aria-hidden="true">
+                        <i className="h-2 w-7 rounded-full bg-current opacity-50" />
+                        <i className="h-2 w-10 rounded-full bg-current opacity-75" />
+                        <i className="h-2 w-12 rounded-full bg-current" />
+                      </span>
+                      <b className="block text-meta">Bulles</b>
+                      <small>Par défaut</small>
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={menuStyle === 'sheet'}
+                      onClick={() => updateMobileMenuStyle('sheet')}
+                      className={'min-h-20 rounded-xl border p-3 text-left transition ' + (menuStyle === 'sheet' ? 'border-accent bg-accent/10 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-sky-100 bg-sky-50 text-ink dark:border-night-line dark:bg-night-2 dark:text-zinc-200')}
+                    >
+                      <span className="mb-2 grid w-12 grid-cols-3 gap-1" aria-hidden="true">
+                        {Array.from({ length: 6 }).map((_, index) => <i key={index} className="h-2 rounded-sm bg-current" />)}
+                      </span>
+                      <b className="block text-meta">Feuille 3×2</b>
+                      <small>Grille d’icônes</small>
+                    </button>
+                  </div>
+                </div>
               </fieldset>
 
               <div className="p-4.5">
-                <b className="block text-[15px]">Compte</b>
+                <b className="block text-control">Compte</b>
                 <button
                   type="button"
                   onClick={logout}
@@ -1045,15 +1061,10 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
       )}
 
       {/* ================= FAB ÉCRIRE — mobile ================= */}
-      {!composeOpen && !menuOpen && currentRoute === '/home' && (
-        <button
-          onClick={() => setComposeOpen(true)}
-          title="Écrire"
-          className="fixed right-4 z-30 flex h-14 w-14 items-center justify-center rounded-full bg-accent text-xl text-white shadow-xl shadow-accent/40 transition active:scale-90 lg:hidden"
-          style={{ bottom: 'calc(66px + max(12px, env(safe-area-inset-bottom)) + 14px)' }}
-        >
+      {!composeOpen && !menuOpen && (currentRoute === '/home' || !!selectedBranch) && (
+        <FloatingActionButton label={selectedBranch ? `Écrire dans ${selectedBranch.name}` : 'Écrire une note'} onClick={() => setComposeOpen(true)}>
           <IconSend />
-        </button>
+        </FloatingActionButton>
       )}
 
       {/* ================= COMPOSE PLEIN ÉCRAN — mobile ================= */}
@@ -1062,22 +1073,24 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           <header className="flex items-center gap-3 border-b border-slate-100 px-4 py-3 dark:border-night-line">
             <button
               onClick={() => setComposeOpen(false)}
-              className={'min-h-[40px] px-2 py-1 text-[15px] font-bold ' + mutedText}
+              className={'min-h-10 px-2 py-1 text-control font-bold ' + mutedText}
             >
               Annuler
             </button>
-            <span className="mx-auto text-[15px] font-extrabold">Nouveau message</span>
+            <span className="mx-auto text-control font-extrabold">Nouvelle note</span>
             <button
               onClick={send}
               disabled={!canSend}
-              className="rounded-full bg-accent px-4.5 py-2 text-[14px] font-extrabold text-white disabled:opacity-40"
+              className="rounded-full bg-accent px-4.5 py-2 text-label font-extrabold text-white disabled:opacity-40"
             >
               Envoyer
             </button>
           </header>
 
           <div className="px-4 pt-3">
-            <p className={'text-[12.5px] font-semibold ' + mutedText}>Partagé avec vos abonnés</p>
+            <p className={'text-meta font-semibold ' + mutedText}>
+              {selectedBranch ? `Partagé dans ${selectedBranch.name}` : 'Partagé avec vos abonnés'}
+            </p>
             <div className="mt-3 grid grid-cols-2 gap-2" role="group" aria-label="Mode d’envoi">
               <button
                 type="button"
@@ -1086,7 +1099,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                 className={'flex min-h-14 items-center gap-2.5 rounded-xl border px-3 text-left transition ' + (carrier === 'BIRD' ? 'border-accent bg-accent/12 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-slate-200 dark:border-night-line ' + mutedText)}
               >
                 <IconBird className="shrink-0 text-lg" />
-                <span><b className="block text-[13px]">Oiseau</b><small>{pigeonsFree} disponible{pigeonsFree > 1 ? 's' : ''}</small></span>
+                <span><b className="block text-meta">Oiseau</b><small>{pigeonsFree} disponible{pigeonsFree > 1 ? 's' : ''}</small></span>
               </button>
               <button
                 type="button"
@@ -1095,7 +1108,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
                 className={'flex min-h-14 items-center gap-2.5 rounded-xl border px-3 text-left transition ' + (carrier === 'POST' ? 'border-accent bg-accent/12 text-accent dark:bg-accent/15 dark:text-accent-soft' : 'border-slate-200 dark:border-night-line ' + mutedText)}
               >
                 <IconMail className="shrink-0 text-lg" />
-                <span><b className="block text-[13px]">Lettre</b><small>{stamps} disponible{stamps > 1 ? 's' : ''}</small></span>
+                <span><b className="block text-meta">Lettre</b><small>{stamps} disponible{stamps > 1 ? 's' : ''}</small></span>
               </button>
             </div>
           </div>
@@ -1105,12 +1118,12 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
             onChange={(e) => setText(e.target.value)}
             maxLength={280}
             autoFocus
-            placeholder="Partager quelque chose avec vos abonnés…"
-            className="flex-1 resize-none bg-transparent px-4 py-3 text-[17px] outline-none placeholder:text-[#5b7a94]/70 dark:placeholder:text-zinc-600"
+            placeholder={selectedBranch ? `Partager dans ${selectedBranch.name}…` : 'Partager quelque chose avec vos abonnés…'}
+            className="flex-1 resize-none bg-transparent px-4 py-3 text-title outline-none placeholder:text-ink-muted/70 dark:placeholder:text-zinc-600"
           />
 
           <footer className="border-t border-slate-100 px-4 py-3 pb-[max(env(safe-area-inset-bottom),12px)] dark:border-night-line">
-            <div className="flex justify-end"><span className={'text-[13px] ' + mutedText}>{text.length}/280</span></div>
+            <div className="flex justify-end"><span className={'text-meta ' + mutedText}>{text.length}/280</span></div>
             {capacityWarning}
           </footer>
         </div>
@@ -1125,6 +1138,7 @@ export default function HomePage({ user, dark, toggleDark, onLogout, onUserUpdat
           onNavigate={navigate}
           onOpenMenu={() => setMenuOpen((open) => !open)}
           menuOpen={menuOpen}
+          menuStyle={menuStyle}
         />
       )}
     </div>

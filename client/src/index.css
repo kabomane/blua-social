@@ -20,9 +20,123 @@
 
   --color-accent: #2a9df4;
   --color-accent-soft: #5eb8ff;
+  --color-accent-strong: #1272b8;
+  --color-branch: #059669;
+  --color-branch-soft: #34d399;
+  --color-branch-strong: #047857;
+
+  /* Couleurs sémantiques partagées par toutes les vues. */
+  --color-page: #f6fbff;
+  --color-ink: #1c3d5a;
+  --color-ink-muted: #5b7a94;
+  --color-overlay: #102c43;
+  --color-map-ocean: #bfe3f5;
+  --color-map-ocean-mid: #d6effb;
+  --color-map-ocean-light: #eef9ff;
+  --color-map-country-1: #b9d9ca;
+  --color-map-country-2: #c7e2d2;
+  --color-map-country-3: #acd2c7;
+  --color-map-country-4: #d1e7d2;
+  --color-map-country-5: #b8d6d0;
+  --color-map-border: #7fa6b6;
+  --color-map-sphere: #8db7c9;
+  --color-map-grid: #83aebe;
+  --color-map-route: #245f86;
+  --color-map-point: #f8fdff;
+  --color-map-shade: #ffffff;
+
+  /* Échelle typographique : éviter les tailles arbitraires par composant. */
+  --text-micro: 0.625rem;
+  --text-micro--line-height: 0.875rem;
+  --text-nav: 0.6875rem;
+  --text-nav--line-height: 1rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-meta: 0.8125rem;
+  --text-meta--line-height: 1.125rem;
+  --text-label: 0.875rem;
+  --text-label--line-height: 1.25rem;
+  --text-control: 0.9375rem;
+  --text-control--line-height: 1.25rem;
+  --text-body: 1rem;
+  --text-body--line-height: 1.5rem;
+  --text-title: 1.0625rem;
+  --text-title--line-height: 1.5rem;
+  --text-brand: 1.3125rem;
+  --text-brand--line-height: 1.75rem;
+  --text-display: 2.625rem;
+  --text-display--line-height: 1.15;
+  --text-map-carrier: 1.96875rem;
+  --text-map-carrier--line-height: 1;
+
+  /* Élévation et formes communes. */
+  --shadow-card: 0 4px 14px rgb(42 157 244 / 0.08);
+  --shadow-card-active: 0 4px 14px rgb(42 157 244 / 0.18);
+  --shadow-card-hover: 0 8px 24px rgb(42 157 244 / 0.14);
+  --shadow-floating-nav: 0 10px 35px rgb(28 61 90 / 0.22);
+  --shadow-floating-nav-dark: 0 12px 36px rgb(0 0 0 / 0.55);
+  --shadow-menu: 0 10px 24px rgb(28 61 90 / 0.2);
+  --shadow-sheet: 0 18px 48px rgb(28 61 90 / 0.28);
+  --shadow-sheet-dark: 0 22px 52px rgb(0 0 0 / 0.62);
+  --shadow-dialog: 0 16px 45px rgb(28 61 90 / 0.18);
+  --radius-sheet: 1.75rem;
+
+  /* Dimensions récurrentes des contrôles mobiles. */
+  --spacing-tap-compact: 2.25rem;
+  --spacing-nav-bar: 4.125rem;
+  --spacing-menu-bubble: 3.625rem;
+  --spacing-menu-cell: 5.125rem;
+  --spacing-composer: 4rem;
+  --spacing-composer-open: 4.5rem;
+}
+
+/* Une branche conserve les mêmes composants que Home, avec son accent vert. */
+.branch-theme {
+  --color-accent: var(--color-branch);
+  --color-accent-soft: var(--color-branch-soft);
+  --color-accent-strong: var(--color-branch-strong);
+}
+
+:root {
+  --map-shade-opacity: 0.16;
+}
+
+.dark {
+  --color-map-ocean: #061f35;
+  --color-map-ocean-mid: #072a43;
+  --color-map-ocean-light: #0a314a;
+  --color-map-country-1: #234449;
+  --color-map-country-2: #284d4c;
+  --color-map-country-3: #203f45;
+  --color-map-country-4: #2b504e;
+  --color-map-country-5: #24484a;
+  --color-map-border: #7890a8;
+  --color-map-sphere: #456477;
+  --color-map-grid: #6b84a0;
+  --color-map-route: #f7fafc;
+  --color-map-point: #08283f;
+  --color-map-shade: #020914;
+  --map-shade-opacity: 0.34;
 }
 
 @layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body,
+  #root {
+    min-height: 100dvh;
+  }
+
+  html,
+  body {
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
   /* Mobile : pas de délai double-tap ni de surbrillance grise au toucher */
   button, a, input, textarea, select {
     touch-action: manipulation;
@@ -62,14 +176,51 @@
   animation-delay: var(--bubble-delay, 0ms);
 }
 
+@keyframes mobile-menu-sheet {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mobile-menu-sheet {
+  animation: mobile-menu-sheet 240ms cubic-bezier(.2, .85, .25, 1) both;
+  transform-origin: bottom center;
+}
+
+@keyframes branch-feed-from-left {
+  from { opacity: 0; transform: translateX(-2rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes branch-feed-from-right {
+  from { opacity: 0; transform: translateX(2rem); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.branch-feed-from-left {
+  animation: branch-feed-from-left 220ms cubic-bezier(.2, .85, .25, 1) both;
+}
+
+.branch-feed-from-right {
+  animation: branch-feed-from-right 220ms cubic-bezier(.2, .85, .25, 1) both;
+}
+
 /* Mappy est limité aux cartes de suivi: aucune règle de thème globale. */
-.mappy-globe { position: relative; height: 100%; width: 100%; overflow: hidden; background: #061f35; }
+.mappy-globe { position: relative; height: 100%; width: 100%; overflow: hidden; background: var(--color-map-ocean); }
 .mappy-globe svg { display: block; height: 100%; width: 100%; pointer-events: none; user-select: none; }
 .mappy-current-emoji { paint-order: stroke; stroke: rgb(8 40 63 / .72); stroke-width: 1.5px; }
-.mappy-distance { position: absolute; right: .6rem; bottom: .55rem; border-radius: 9999px; background: rgb(6 29 47 / .78); padding: .2rem .45rem; color: white; font-size: .625rem; font-weight: 700; letter-spacing: .04em; }
+.mappy-distance { position: absolute; right: .6rem; bottom: .55rem; border-radius: 9999px; background: rgb(6 29 47 / .78); padding: .2rem .45rem; color: white; font-size: var(--text-micro); font-weight: 700; letter-spacing: .04em; }
 
 @media (prefers-reduced-motion: reduce) {
-  .mobile-menu-bubble {
+  .mobile-menu-bubble,
+  .mobile-menu-sheet,
+  .branch-feed-from-left,
+  .branch-feed-from-right {
     animation: none;
   }
 }

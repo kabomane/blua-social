@@ -190,31 +190,31 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
 
   const field =
     // 16px minimum : en dessous, iOS zoome automatiquement au focus
-    'w-full rounded-xl border-[1.5px] border-slate-200 bg-transparent px-4 py-3 text-[16px] outline-none transition ' +
+    'w-full rounded-xl border-2 border-slate-200 bg-transparent px-4 py-3 text-body outline-none transition ' +
     'focus:border-accent focus:ring-[3px] focus:ring-accent/15 ' +
     'dark:border-night-line dark:focus:border-accent-soft dark:focus:ring-accent-soft/10'
 
   const availMsg: Record<Availability, { text: string; cls: string }> = {
-    idle: { text: '3 à 20 caractères : lettres, chiffres, underscore.', cls: 'text-[#5b7a94] dark:text-zinc-500' },
-    checking: { text: 'Vérification…', cls: 'text-[#5b7a94] dark:text-zinc-500' },
+    idle: { text: '3 à 20 caractères : lettres, chiffres, underscore.', cls: 'text-ink-muted dark:text-zinc-500' },
+    checking: { text: 'Vérification…', cls: 'text-ink-muted dark:text-zinc-500' },
     free: { text: '✓ Disponible !', cls: 'font-semibold text-emerald-600 dark:text-emerald-400' },
     taken: { text: "✗ Ce nom d'utilisateur est déjà pris.", cls: 'font-semibold text-red-500' },
     invalid: { text: '3 à 20 caractères : lettres, chiffres, underscore.', cls: 'font-semibold text-red-500' },
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-gradient-to-b from-sky-strong to-sky-soft text-[#1c3d5a] transition-colors md:grid-cols-[1fr_480px] dark:from-night-0 dark:to-night-0 dark:text-zinc-100">
+    <div className="grid min-h-dvh grid-cols-1 bg-gradient-to-b from-sky-strong to-sky-soft text-ink transition-colors md:grid-cols-[1fr_480px] dark:from-night-0 dark:to-night-0 dark:text-zinc-100">
       {/* ---------- gauche : promesse ---------- */}
       <section className="relative hidden flex-col justify-center overflow-hidden p-16 md:flex">
-        <h1 className="max-w-[520px] text-[42px] leading-[1.15] font-extrabold">
+        <h1 className="max-w-[520px] text-display font-extrabold">
           Un réseau social où les messages{' '}
           <span className="text-accent dark:text-accent-soft">voyagent vraiment</span>.
         </h1>
-        <p className="mt-4 max-w-[440px] text-[17px] leading-relaxed text-[#5b7a94] dark:text-zinc-400">
+        <p className="mt-4 max-w-[440px] text-title leading-relaxed text-ink-muted dark:text-zinc-400">
           Vos pigeons et vos lettres portent vos mots à travers le monde. La
           distance compte, l'attente a du sens, chaque arrivée est une surprise.
         </p>
-        <ul className="mt-8 flex flex-col gap-3.5 text-[15px] font-semibold text-[#5b7a94] dark:text-zinc-400">
+        <ul className="mt-8 flex flex-col gap-3.5 text-control font-semibold text-ink-muted dark:text-zinc-400">
           <li className="flex items-center gap-3">
             <IconBird className="shrink-0 text-lg text-accent" /> Des pigeons rapides
             sur les courtes distances
@@ -259,7 +259,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                 'flex-1 rounded-[9px] py-2.5 text-sm font-extrabold transition ' +
                 (mode === m
                   ? 'bg-accent text-white shadow-lg shadow-accent/30'
-                  : 'text-[#5b7a94] dark:text-zinc-500')
+                  : 'text-ink-muted dark:text-zinc-500')
               }
             >
               {m === 'login' ? 'Connexion' : 'Inscription'}
@@ -269,7 +269,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
 
         {/* indicateur d'étapes (inscription) */}
         {signup && (
-          <div className="mb-5 flex items-center gap-2 text-xs font-bold text-[#5b7a94] dark:text-zinc-500">
+          <div className="mb-5 flex items-center gap-2 text-xs font-bold text-ink-muted dark:text-zinc-500">
             {(
               [
                 [1, 'Identifiants'],
@@ -306,7 +306,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                 ? 'Choisissez votre nom'
                 : 'Où êtes-vous ?'}
         </h2>
-        <p className="mt-1 mb-6 text-sm text-[#5b7a94] dark:text-zinc-500">
+        <p className="mt-1 mb-6 text-sm text-ink-muted dark:text-zinc-500">
           {!signup
             ? 'Vos pigeons vous attendent au perchoir.'
             : step === 1
@@ -320,7 +320,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
           {(!signup || step === 1) && (
             <>
               <div>
-                <label className="mb-1.5 block text-[13px] font-bold">Adresse email</label>
+                <label className="mb-1.5 block text-meta font-bold">Adresse email</label>
                 <input
                   className={field + (emailBad ? ' !border-red-400' : '')}
                   type="email"
@@ -335,7 +335,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
               </div>
 
               <div>
-                <label className="mb-1.5 block text-[13px] font-bold">Mot de passe</label>
+                <label className="mb-1.5 block text-meta font-bold">Mot de passe</label>
                 <div className="relative">
                   <input
                     className={field + (passShort ? ' !border-red-400' : '')}
@@ -360,7 +360,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                       ? 'font-semibold text-red-500'
                       : password.length >= 4
                         ? 'font-semibold text-emerald-600 dark:text-emerald-400'
-                        : 'text-[#5b7a94] dark:text-zinc-500')
+                        : 'text-ink-muted dark:text-zinc-500')
                   }
                 >
                   {passShort
@@ -376,9 +376,9 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
 
           {signup && step === 2 && (
             <div>
-              <label className="mb-1.5 block text-[13px] font-bold">Nom d'utilisateur</label>
+              <label className="mb-1.5 block text-meta font-bold">Nom d'utilisateur</label>
               <div className="relative">
-                <span className="absolute top-1/2 left-4 -translate-y-1/2 font-bold text-[#5b7a94] dark:text-zinc-500">
+                <span className="absolute top-1/2 left-4 -translate-y-1/2 font-bold text-ink-muted dark:text-zinc-500">
                   @
                 </span>
                 <input
@@ -424,7 +424,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                 </p>
               ) : (
                 <>
-                  <p className="text-sm text-[#5b7a94] dark:text-zinc-500">
+                  <p className="text-sm text-ink-muted dark:text-zinc-500">
                     Votre latitude et longitude serviront à calculer la distance et le
                     temps d'arrivée de vos envois.
                   </p>
@@ -479,7 +479,7 @@ export default function AuthPage({ onAuth, dark, toggleDark }: Props) {
                 setStep((s) => (s === 3 ? 2 : 1))
                 setError('')
               }}
-              className="text-sm font-bold text-[#5b7a94] hover:underline dark:text-zinc-500"
+              className="text-sm font-bold text-ink-muted hover:underline dark:text-zinc-500"
             >
               ← Revenir en arrière
             </button>

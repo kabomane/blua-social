@@ -3,16 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#e8f6ff" />
     <script>
       // Exécuté avant le chargement de React : évite le flash clair au rechargement.
       try {
         if (localStorage.getItem('blue-atmosphere:theme') === 'dark') {
           document.documentElement.classList.add('dark')
+          document.documentElement.style.colorScheme = 'dark'
+          document.querySelector('meta[name="theme-color"]').content = '#060607'
+        } else {
+          document.documentElement.style.colorScheme = 'light'
         }
       } catch {}
     </script>
-    <style>html.dark { background: #060607; }</style>
+    <style>
+      html, body { background: #e8f6ff; }
+      html.dark, html.dark body { background: #060607; }
+    </style>
     <title>Blue Atmosphere</title>
   </head>
   <body>

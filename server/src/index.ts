@@ -3,6 +3,7 @@ import { db } from './database/db.js'
 import { authRouter } from './auth/routes.js'
 import { deliveriesRouter } from './deliveries/routes.js'
 import { messagesRouter } from './messages/routes.js'
+import { branchesRouter } from './branches/routes.js'
 
 // Point d'entrée de l'API Blue Atmosphere.
 // Les routes métier (users, friendships, branches, messages, deliveries,
@@ -16,6 +17,7 @@ app.use(express.json())
 app.use('/api/auth', authRouter)
 app.use('/api/deliveries', deliveriesRouter)
 app.use('/api/messages', messagesRouter)
+app.use('/api/branches', branchesRouter)
 
 app.get('/api/health', (_req, res) => {
   const row = db

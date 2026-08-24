@@ -32,6 +32,9 @@ function App() {
   useEffect(() => {
     if (!ready) return
     document.documentElement.classList.toggle('dark', dark)
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+      ?.setAttribute('content', dark ? '#060607' : '#e8f6ff')
     try {
       localStorage.setItem(THEME_STORAGE_KEY, dark ? 'dark' : 'light')
     } catch {
@@ -53,6 +56,21 @@ function App() {
     void storeUser(nextUser)
   }
 
+  function toggleThemeAndReload() {
+    const nextDark = !dark
+    const theme = nextDark ? 'dark' : 'light'
+    document.documentElement.classList.toggle('dark', nextDark)
+    document.documentElement.style.colorScheme = theme
+    document.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
+      ?.setAttribute('content', nextDark ? '#060607' : '#e8f6ff')
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme)
+    } catch {
+      // IndexedDB reste la source locale de secours.
+    }
+    void kvSet('pref:theme', theme).finally(() => window.location.reload())
+  }
+
   async function logout() {
     await clearUser()
     setUser(null)
@@ -60,14 +78,14 @@ function App() {
 
   if (!ready) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white dark:bg-night-0">
+      <div className="flex min-h-dvh items-center justify-center bg-sky-soft dark:bg-night-0">
         <IconBird className="animate-bounce text-4xl text-accent" />
       </div>
     )
   }
 
   if (!user) {
-    return <AuthPage onAuth={updateUser} dark={dark} toggleDark={() => setDark(!dark)} />
+    return <AuthPage onAuth={updateUser} dark={dark} toggleDark={toggleThemeAndReload} />
   }
 
   if (!user.locationCheckedAt || foregroundAt - user.locationCheckedAt * 1000 >= 24 * 60 * 60 * 1000) {
@@ -78,7 +96,7 @@ function App() {
     <HomePage
       user={user}
       dark={dark}
-      toggleDark={() => setDark(!dark)}
+      toggleDark={toggleThemeAndReload}
       onLogout={logout}
       onUserUpdate={updateUser}
     />
